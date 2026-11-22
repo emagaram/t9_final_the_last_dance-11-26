@@ -6,7 +6,7 @@ use std::{
 use crate::{
     evaluation::final_evaluate::scores_hm_tree::read_stream32,
     scorecast::scorecast::Scorecast,
-    settings::{ITERATION_ID, READ_CALC_RATIO},
+    settings::{HM_TRIE, ITERATION_ID, READ_CALC_RATIO},
     solver::{
         create_root::create_root, set_children::set_children, set_full_estimate::set_full_estimate,
     },
@@ -41,7 +41,7 @@ pub fn solver(threshold: f32, target_num_keys: usize) {
     }
 
     // Create the static tree for the hm trie before starting the solver
-    let hm_static_tree = match read_stream32("hm_trie32_20000.bin") {
+    let hm_static_tree = match read_stream32(HM_TRIE) {
         Ok(tree) => tree,
         Err(e) => {
             error!(?e, "Failed to read hm_static_tree from file");

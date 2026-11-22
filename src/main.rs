@@ -1,6 +1,6 @@
 use ::tracing::{error, info};
 use t9_project::{
-    settings::{ITERATION_ID, NUM_KEYS, RESET_DIR, THRESHOLD_20K},
+    settings::{ITERATION_ID, NUM_KEYS, RESET_DIR, THRESHOLD},
     solver::solver::solver,
     tracing::writer::init_tracing,
 };
@@ -18,5 +18,5 @@ fn main() {
         debug_assertions = cfg!(debug_assertions),
         "Starting solver with keys"
     );
-    solver(THRESHOLD_20K, NUM_KEYS);
+    solver(THRESHOLD, NUM_KEYS);
 }
