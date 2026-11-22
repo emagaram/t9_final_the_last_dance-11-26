@@ -15,7 +15,7 @@ use crossbeam_channel::bounded;
 use tracing::{span, Level};
 
 use crate::{
-    general::{key_path::KeyPath, set32::Set32},
+    general::{partition_id::PartitionId, set32::Set32},
     nodes::{
         node::get_node_path,
         node_metadata::{NodeMetadata, NodeType},
@@ -253,7 +253,7 @@ pub fn set_full_estimate(
     }
 }
 
-pub fn calculate_parents_to_check(node_path: &Vec<Set32>, missing: Set32) -> Vec<u128> {
+pub fn calculate_parents_to_check(node_path: &Vec<Set32>, missing: Set32) -> Vec<PartitionId> {
     let cap = (missing.count_ones() as usize) * node_path.len();
     let mut result = Vec::with_capacity(cap);
     let mut copy = node_path.clone();
@@ -261,7 +261,7 @@ pub fn calculate_parents_to_check(node_path: &Vec<Set32>, missing: Set32) -> Vec
     for i in 0..node_path.len() {
         for letter in missing.into_iter() {
             copy[i] = copy[i].add(letter);
-            result.push(KeyPath::keys_to_u128(&copy));
+            result.push(PartitionId::from_keys(&copy));
             copy[i] = copy[i].remove(letter);
         }
     }

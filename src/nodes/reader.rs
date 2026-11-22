@@ -7,7 +7,7 @@ use nix::libc::{self, pread};
 use tracing::error;
 
 use crate::{
-    general::set32::Set32,
+    general::{partition_id::PartitionId, set32::Set32},
     nodes::{node_metadata::NodeMetadata, standard_node::StandardNode},
     util::set32_to_string,
 };
@@ -26,7 +26,7 @@ pub struct IoTask {
 
 pub struct TasksResult {
     pub base_nodes: Vec<(Set32, Vec<StandardNode>)>,
-    pub predecessors_map: HashMap<u128, Vec<f32>>,
+    pub predecessors_map: HashMap<PartitionId, Vec<f32>>,
     pub target_combo_sets: Vec<Set32>,
 }
 pub struct TasksData {

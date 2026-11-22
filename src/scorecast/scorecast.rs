@@ -1,4 +1,3 @@
-use core::f32;
 use dashmap::DashMap;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -394,19 +393,6 @@ mod tests {
 
     use super::*;
 
-    // RUSTFLAGS="-Awarnings" cargo test --release test_scorecast_new_eq_old -- --nocapture
-    #[test]
-    fn test_scorecast_new_eq_old() {
-        let scorecast_new: Scorecast = Scorecast::read("scorecasts/scorecast_0.bin").unwrap();
-
-        let scorecast_old: ScorecastOld =
-            ScorecastOld::read_from_file_stream("scorecasts_other/scorecast_0.bin").unwrap();
-        assert_eq!(
-            scorecast_new.partial_estimates_target_num_keys,
-            scorecast_old.partial_estimates_target_num_keys
-        );
-        assert_eq!(1, 1);
-    }
     #[cfg(test)]
     // RUSTFLAGS="-Awarnings" cargo test --release test_vector_vs_hashmap_performance -- --nocapture
     #[test]

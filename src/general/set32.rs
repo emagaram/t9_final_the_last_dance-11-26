@@ -1,4 +1,4 @@
-use std::{iter, u32};
+use std::iter;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};

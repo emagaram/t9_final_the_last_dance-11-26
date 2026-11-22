@@ -56,12 +56,6 @@ impl Config {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct SolutionScore {
-    score: f32,
-    config: Config,
-}
-
 /// Monitors for termination signal in a separate thread
 pub fn monitor_for_termination(stop_flag: Arc<AtomicBool>) {
     thread::spawn(move || {
@@ -231,7 +225,7 @@ fn evaluate_t10_config(
         for chunk in freq_list.chunks_exact(inc) {
             // Get word score using unsafe pointer arithmetic
             let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-            let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) };
+            let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap());
             let word_bytes = unsafe { chunk.get_unchecked(..len_size) };
 
             if *len <= max_u64_len {
@@ -268,7 +262,7 @@ fn evaluate_t10_config(
 
 /// Mutates a configuration
 fn mutate(config: &mut Config, rng: &mut ThreadRng) {
-    let indices: Vec<usize> = (0..NUM_LETTERS).choose_multiple(rng, 2);
+    let indices: Vec<usize> = (0..NUM_LETTERS).sample(rng, 2);
     let letter1 = indices[0];
     let letter2 = indices[1];
     let key1 = config.letter_to_keys[letter1];
@@ -334,7 +328,7 @@ pub fn run_simulation(
     let score_file = format!("{}_best_{}_key_layout.txt", process_id, num_keys);
     let mut current_best_score = f32::MAX;
 
-    let mut rng: ThreadRng = thread_rng();
+    let mut rng: ThreadRng = rand::rng();
     // Create an array with indices from 0 to NUM_LETTERS-1
     let mut letters_arr: [usize; NUM_LETTERS] = [0; NUM_LETTERS];
     for i in 0..NUM_LETTERS {
@@ -463,7 +457,7 @@ pub fn run_simulation(
             let parent1 = potential_parents.pop().unwrap();
             let mut child = parent1.clone();
 
-            for _ in 0..rng.gen_range(1..=10) {
+            for _ in 0..rng.random_range(1..=10) {
                 mutate(&mut child, &mut rng);
             }
 

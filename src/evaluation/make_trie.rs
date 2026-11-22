@@ -2,7 +2,9 @@ use std::path::Path;
 
 use crate::{
     evaluation::final_evaluate::{
-        scores_hm_tree::{gen_hm_dyn_tree, gen_hm_static_tree32, gen_hm_vec, save_stream32},
+        scores_hm_tree::{
+            gen_hm_dyn_tree_new, gen_hm_static_tree32, gen_hm_vec_new, save_stream32,
+        },
         scores_hm_tree_node::StaticTrie32,
     },
     general::set32::Set32,
@@ -24,8 +26,8 @@ pub fn trie_path_for_dict(dict: &str) -> String {
 /// to `trie_path_for_dict(dict)` in the cwd, where the solver's `HM_TRIE` expects it.
 /// Run with `cargo run --release --bin make_trie -- DICT.json`
 pub fn make_trie(dict: &str) -> HashMap<Set32, StaticTrie32> {
-    let hm_vec = gen_hm_vec(dict);
-    let hm_dyn_tree = gen_hm_dyn_tree(hm_vec);
+    let hm_vec = gen_hm_vec_new(dict);
+    let hm_dyn_tree = gen_hm_dyn_tree_new(hm_vec);
     let hm_static_tree = gen_hm_static_tree32(hm_dyn_tree);
 
     let out_path = trie_path_for_dict(dict);

@@ -1,5 +1,4 @@
 pub mod aws_save;
-pub mod compression;
 pub mod evaluation;
 pub mod general;
 pub mod genetic;

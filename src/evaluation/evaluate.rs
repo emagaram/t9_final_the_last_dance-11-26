@@ -45,23 +45,6 @@ fn word_to_t10_arr(word: &[u8], t10_config: &[u8; NUM_LETTERS]) -> Vec<u8> {
         .collect()
 }
 
-fn word_to_t10_idx<T>(word: &[u8], t10_config: &[u8; NUM_LETTERS]) -> T
-where
-    T: From<u8> + std::ops::Mul<Output = T> + std::ops::Add<Output = T> + Copy,
-{
-    // Remove the constant declaration that uses runtime values
-    let mut result = T::from(0);
-    let num_letters = T::from(NUM_LETTERS as u8);
-    for &b in word {
-        // Multiply by the base (number of letters)
-        result = result * num_letters;
-        // Add the value plus 1 (to avoid 0 which could cause ambiguity)
-        let key_value = unsafe { T::from(*t10_config.get_unchecked(b as usize) + 1) };
-        result = result + key_value;
-    }
-    result
-}
-
 pub fn new_evaluate(
     freq_list: &Vec<(Vec<u8>, f32)>,
     config: &Vec<Set32>,
@@ -257,7 +240,7 @@ pub fn evaluate_arr_opt_timed(
 
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) };
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap());
 
                 // Access array without bounds checking
                 let val = unsafe { count_arr.get_unchecked_mut(word_idx as usize) };
@@ -298,7 +281,7 @@ pub fn evaluate_arr_opt_timed(
 
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) };
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap());
 
                 match count_hm_64.entry(word_idx) {
                     Entry::Occupied(mut e) => {
@@ -340,7 +323,7 @@ pub fn evaluate_arr_opt_timed(
 
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) };
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap());
 
                 match count_hm_128.entry(word_idx) {
                     Entry::Occupied(mut e) => {
@@ -372,7 +355,7 @@ pub fn evaluate_arr_opt_timed(
             for chunk in freq_list.chunks_exact(inc) {
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) };
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap());
 
                 // Create word vector
                 let mut word_vec = Vec::with_capacity(len_size);
@@ -466,7 +449,7 @@ pub fn evaluate_arr_opt(
         for chunk in freq_list.chunks_exact(inc) {
             // Get word score using unsafe pointer arithmetic
             let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-            let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) } as f64;
+            let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap()) as f64;
             let word_bytes = unsafe { chunk.get_unchecked(..len_size) };
 
             if *len <= max_u64_len {
@@ -560,7 +543,7 @@ pub fn evaluate_arr_opt_old(
 
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) } as f64;
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap()) as f64;
 
                 // Access array without bounds checking
                 let val = unsafe { count_arr.get_unchecked_mut(word_idx as usize) };
@@ -591,7 +574,7 @@ pub fn evaluate_arr_opt_old(
 
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) } as f64;
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap()) as f64;
 
                 match count_hm_64.entry(word_idx) {
                     Entry::Occupied(mut e) => {
@@ -623,7 +606,7 @@ pub fn evaluate_arr_opt_old(
 
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) } as f64;
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap()) as f64;
 
                 match count_hm_128.entry(word_idx) {
                     Entry::Occupied(mut e) => {
@@ -645,7 +628,7 @@ pub fn evaluate_arr_opt_old(
             for chunk in freq_list.chunks_exact(inc) {
                 // Get word score using unsafe pointer arithmetic
                 let score_bytes = unsafe { chunk.get_unchecked(len_size..len_size + 4) };
-                let word_score = unsafe { *(score_bytes.as_ptr() as *const f32) } as f64;
+                let word_score = f32::from_le_bytes(score_bytes.try_into().unwrap()) as f64;
 
                 // Create word vector
                 let mut word_vec = Vec::with_capacity(len_size);
@@ -669,86 +652,6 @@ pub fn evaluate_arr_opt_old(
     return (score as f32, num_keys as u8);
 }
 
-pub fn evaluate_arr_idx(
-    freq_list: &[(Vec<u8>, f32)],
-    config: &Vec<Set32>,
-    count_hm: &mut HashMap<u128, u32>,
-    stop_at: f32,
-) -> f32 {
-    let config_arr = config_to_10_arr(&config);
-    let mut score = 0.0;
-
-    for (word, value) in freq_list {
-        let t10_idx = word_to_t10_idx(word, &config_arr);
-
-        // Time hashmap lookup and insertion
-        let count = count_hm.entry(t10_idx).or_insert(0);
-
-        if *count != 0 {
-            score += value * *count as f32;
-
-            if score > stop_at {
-                return score;
-            }
-        }
-        *count += 1;
-    }
-    return score;
-}
-
-pub fn evaluate_arr_idx_timed(
-    freq_list: &[(Vec<u8>, f32)],
-    config: &Vec<Set32>,
-    count_hm: &mut HashMap<u128, u32>,
-    stop_at: f32,
-) -> f32 {
-    let config_arr = config_to_10_arr(&config);
-    let mut score = 0.0;
-
-    // Timing variables
-    let mut total_hash_time = std::time::Duration::ZERO;
-    let mut total_mapping_time = std::time::Duration::ZERO;
-    let mut total_score_time = std::time::Duration::ZERO;
-
-    for (word, value) in freq_list {
-        // Time word mapping
-        let mapping_start = std::time::Instant::now();
-        let t10_idx = word_to_t10_idx(word, &config_arr);
-        total_mapping_time += mapping_start.elapsed();
-
-        // Time hashmap lookup and insertion
-        let hash_start = std::time::Instant::now();
-        let count = count_hm.entry(t10_idx).or_insert(0);
-        total_hash_time += hash_start.elapsed();
-
-        if *count != 0 {
-            // Time score calculation
-            let score_start = std::time::Instant::now();
-            score += value * *count as f32;
-            total_score_time += score_start.elapsed();
-
-            if score > stop_at {
-                println!(
-                    "Timing stats: mapping={}ms, hashing={}ms, scoring={}ms",
-                    total_mapping_time.as_micros() as f64 / 1000.0,
-                    total_hash_time.as_micros() as f64 / 1000.0,
-                    total_score_time.as_micros() as f64 / 1000.0
-                );
-                return score;
-            }
-        }
-        *count += 1;
-    }
-
-    println!(
-        "Timing stats: mapping={}ms, hashing={}ms, scoring={}ms",
-        total_mapping_time.as_micros() as f64 / 1000.0,
-        total_hash_time.as_micros() as f64 / 1000.0,
-        total_score_time.as_micros() as f64 / 1000.0
-    );
-    return score;
-}
-
 pub fn evaluate_arr(
     freq_list: &[(Vec<u8>, f32)],
     config: &Vec<Set32>,
@@ -756,7 +659,8 @@ pub fn evaluate_arr(
     stop_at: f32,
 ) -> f32 {
     let config_arr = config_to_10_arr(&config);
-    let mut score = 0.0;
+    // Accumulate in f64 like `evaluate`; f32 sums drift over a 300k-word dictionary
+    let mut score: f64 = 0.0;
 
     for (word, value) in freq_list {
         // Time word mapping
@@ -764,15 +668,15 @@ pub fn evaluate_arr(
         let count = count_hm.entry(t10_word).or_insert(0);
 
         if *count != 0 {
-            score += value * *count as f32;
+            score += (*value as f64) * *count as f64;
 
-            if score > stop_at {
-                return score;
+            if score > stop_at as f64 {
+                return score as f32;
             }
         }
         *count += 1;
     }
-    return score;
+    return score as f32;
 }
 
 pub fn evaluate(freq_list: &Vec<(Vec<u8>, f32)>, config: &Vec<Set32>, stop_at: f32) -> f32 {
@@ -875,6 +779,7 @@ fn merge_slices(keys: &Vec<Set32>, unused_letters: &Vec<Set32>) -> Vec<Vec<Set32
     results
 }
 
+// cargo test --release --lib evaluation::evaluate::tests
 #[cfg(test)]
 mod tests {
 
@@ -887,9 +792,8 @@ mod tests {
     use crate::{
         create_set32, create_set32_str,
         evaluation::evaluate::{
-            config_to_10_arr, config_to_t10_config_full, evaluate_arr, evaluate_arr_idx,
-            evaluate_arr_int, evaluate_arr_opt, evaluate_arr_opt_timed, merge_slices,
-            word_to_t10_arr, word_to_t10_idx,
+            config_to_10_arr, config_to_t10_config_full, evaluate_arr, evaluate_arr_int,
+            evaluate_arr_opt, evaluate_arr_opt_timed, merge_slices, word_to_t10_arr,
         },
         general::freq_list::create_freq_list,
         general::set32::Set32,
@@ -900,8 +804,9 @@ mod tests {
 
     #[test]
     fn evaluate_full_best_10_key() {
-        let freq_list: Vec<(Vec<u8>, f32)> = create_freq_list("./word_freq.json");
-        let target = 0.024770784;
+        let freq_list: Vec<(Vec<u8>, f32)> = create_freq_list("./word_freq_full.json");
+        // Best known full-dictionary layout (these keys + rp); each lower bound must not exceed it
+        let target = crate::settings::THRESHOLD_FULL;
         // Everything except rp
         let config = vec![
             create_set32!('g', 'm', 'x'),
@@ -990,7 +895,7 @@ mod tests {
     }
     #[test]
     fn evaluate_one_char_per_letter_0() {
-        let fl = create_freq_list("./word_freq.json");
+        let fl = create_freq_list("./word_freq_full.json");
         let mut config = Vec::<Set32>::new();
         config.push(Set32::fill_from_right(1));
         config.append(&mut get_missing_letters(&config));
@@ -999,7 +904,7 @@ mod tests {
     }
     #[test]
     fn evaluate_abc_same_as_python_result() {
-        let fl = create_freq_list("./word_freq.json");
+        let fl = create_freq_list("./word_freq_full.json");
         let mut config: Vec<Set32> = vec![
             str_to_set("abc"),
             str_to_set("def"),
@@ -1017,7 +922,7 @@ mod tests {
         config.extend(&get_missing_letters(&config));
         config_to_t10_config_full(&config, &mut config_hm);
         let score = evaluate(&fl, &config, 10000.9);
-        let python_score: f32 = 0.080390571;
+        let python_score: f32 = 0.08698743149990205;
         let epsilon = 0.0001;
         assert!((score - python_score).abs() < epsilon);
     }
@@ -1027,7 +932,7 @@ mod tests {
         // Run each evaluation function 50 times to get better performance metrics
 
         // Create frequency list
-        let freq_list = create_freq_list("./word_freq.json");
+        let freq_list = create_freq_list("./word_freq_full.json");
 
         // Use a configuration that includes all letters
         let config = vec![
@@ -1066,6 +971,8 @@ mod tests {
         let freq_list: Vec<(Vec<u8>, f32)> = freq_list;
         let hm = &mut HashMap::new();
         for _ in 0..iterations {
+            // evaluate_arr counts collisions in the map it's given, so start each run empty
+            hm.clear();
             score2 = evaluate_arr(&freq_list, &config, hm, stop_at);
         }
         let duration2 = start.elapsed();
@@ -1095,7 +1002,7 @@ mod tests {
     // cargo test --release test_evaluate_arr_vs_evaluate_arr_int -- --nocapture
     fn test_evaluate_arr_vs_evaluate_arr_int() {
         // Create frequency list and convert to integer version
-        let freq_list = create_freq_list("./word_freq.json");
+        let freq_list = create_freq_list("./word_freq_full.json");
         let scale = 1_000_000_000_000.0; // Scale factor for conversion to u64
         let freq_list_int: Vec<(Vec<u8>, u64)> = freq_list
             .iter()
@@ -1173,152 +1080,7 @@ mod tests {
         );
         println!("Speedup: {:.2}x", avg_duration_float / avg_duration_int);
     }
-    // RUSTFLAGS="-Awarnings" cargo test --release test_word_to_t10_idx_vs_arr -- --nocapture
-    #[test]
-    fn test_word_to_t10_idx_vs_arr() {
-        // Create a configuration array
-        let config = vec![
-            create_set32_str!("gmx"),
-            create_set32_str!("zef"),
-            create_set32_str!("q'hd"),
-            create_set32_str!("lji"),
-            create_set32_str!("ot"),
-            create_set32_str!("su"),
-            create_set32_str!("akw"),
-            create_set32_str!("nb"),
-            create_set32_str!("vyc"),
-            create_set32_str!("rp"),
-        ];
 
-        let config_arr = config_to_10_arr(&config);
-
-        // Create sample words of different lengths
-        // Create sample words of different lengths from the frequency list
-        let freq_list = create_freq_list("./word_freq.json");
-        let words: Vec<Vec<u8>> = freq_list.iter().map(|(word, _)| word.clone()).collect();
-
-        // Make sure we have words
-        assert!(
-            !words.is_empty(),
-            "Failed to load words from frequency list"
-        );
-
-        let iterations = 100;
-
-        // Test word_to_t10_arr
-        let start = Instant::now();
-        let mut _result1 = Vec::with_capacity(iterations * words.len());
-        for _ in 0..iterations {
-            for word in &words {
-                _result1.push(word_to_t10_arr(word, &config_arr)[0]);
-            }
-        }
-        let duration_arr = start.elapsed();
-
-        // Test word_to_t10_idx
-        let start = Instant::now();
-        let mut _result2: Vec<u64> = Vec::with_capacity(iterations * words.len());
-        for _ in 0..iterations {
-            for word in &words {
-                _result2.push(word_to_t10_idx(word, &config_arr));
-            }
-        }
-        let duration_idx = start.elapsed();
-
-        println!(
-            "Running each function {} times on {} words:",
-            iterations,
-            words.len()
-        );
-        println!(
-            "word_to_t10_arr: {:.4}ms total, {:.9}ms per word",
-            duration_arr.as_secs_f64() * 1000.0,
-            duration_arr.as_secs_f64() * 1000.0 / (iterations * words.len()) as f64
-        );
-        println!(
-            "word_to_t10_idx: {:.4}ms total, {:.9}ms per word",
-            duration_idx.as_secs_f64() * 1000.0,
-            duration_idx.as_secs_f64() * 1000.0 / (iterations * words.len()) as f64
-        );
-        println!(
-            "Ratio arr/idx: {:.2}x",
-            duration_arr.as_secs_f64() / duration_idx.as_secs_f64()
-        );
-    }
-
-    // cargo test --release test_evaluate_arr_vs_evaluate_arr_idx -- --nocapture
-    #[test]
-    fn test_evaluate_arr_vs_evaluate_arr_idx() {
-        // Create frequency list
-        let freq_list = create_freq_list("./word_freq.json");
-
-        // Use a configuration that includes all letters
-        let config = vec![
-            create_set32_str!("gmx"),
-            create_set32_str!("zef"),
-            create_set32_str!("q'hd"),
-            create_set32_str!("lji"),
-            create_set32_str!("ot"),
-            create_set32_str!("su"),
-            create_set32_str!("akw"),
-            create_set32_str!("nb"),
-            create_set32_str!("vyc"),
-            create_set32_str!("rp"),
-        ];
-
-        // Make sure all letters are used
-        let missing = get_missing_letters(&config);
-        assert!(missing.is_empty(), "Config should use all letters");
-
-        // No early stopping
-        let stop_at = f32::MAX;
-        let iterations = 20;
-
-        // Time and execute evaluate_arr multiple times
-        let start = Instant::now();
-        let mut score_arr = 0.0;
-        let hm_arr = &mut HashMap::<Vec<u8>, u32>::new();
-        for _ in 0..iterations {
-            hm_arr.clear();
-            score_arr = evaluate_arr(&freq_list, &config, hm_arr, stop_at);
-        }
-        let duration_arr = start.elapsed();
-        let avg_duration_arr = duration_arr.as_secs_f64() / iterations as f64;
-
-        // Time and execute evaluate_arr_idx multiple times
-        let start = Instant::now();
-        let mut score_idx = 0.0;
-        let hm_idx = &mut HashMap::<u128, u32>::new();
-        for _ in 0..iterations {
-            hm_idx.clear();
-            score_idx = evaluate_arr_idx(&freq_list, &config, hm_idx, stop_at);
-        }
-        let duration_idx = start.elapsed();
-        let avg_duration_idx = duration_idx.as_secs_f64() / iterations as f64;
-
-        // Verify results are the same (with small tolerance for floating point)
-        let epsilon = 0.0001;
-        assert!(
-            (score_arr - score_idx).abs() < epsilon,
-            "Scores should be equal: arr={}, idx={}, diff={}",
-            score_arr,
-            score_idx,
-            (score_arr - score_idx).abs()
-        );
-
-        println!("Running each function {} times:", iterations);
-        println!(
-            "evaluate_arr:     {:.4}ms total, {:.4}ms per run",
-            duration_arr.as_secs_f64() * 1000.0,
-            avg_duration_arr * 1000.0
-        );
-        println!(
-            "evaluate_arr_idx: {:.4}ms total, {:.4}ms per run",
-            duration_idx.as_secs_f64() * 1000.0,
-            avg_duration_idx * 1000.0
-        );
-        println!("Speedup: {:.2}x", avg_duration_arr / avg_duration_idx);
-    }
     // RUSTFLAGS="-Awarnings" cargo test --release test_vec_vs_flat_array_iteration -- --nocapture
     #[test]
     fn test_vec_vs_flat_array_iteration() {
@@ -1406,134 +1168,10 @@ mod tests {
         // println!("Sums (to prevent optimization): nested={}, flat={}", sum_nested, sum_flat);
     }
 
-    // RUSTFLAGS="-Awarnings" cargo test --release test_evaluate_arr_opt_vs_evaluate_arr_idx -- --nocapture
-    #[test]
-    fn test_evaluate_arr_opt_vs_evaluate_arr_idx() {
-        // Create frequency list
-        let freq_list = create_freq_list("./word_freq.json");
-
-        // Group the frequency list by word length
-        let freq_lists_opt =
-            crate::general::freq_list::group_by_length_flattened(freq_list.clone());
-
-        // Use a configuration that includes all letters
-        let config = vec![
-            create_set32_str!("gmx"),
-            create_set32_str!("zef"),
-            create_set32_str!("q'hd"),
-            create_set32_str!("lji"),
-            create_set32_str!("ot"),
-            create_set32_str!("su"),
-            create_set32_str!("akw"),
-            create_set32_str!("nb"),
-            create_set32_str!("vyc"),
-            create_set32_str!("rp"),
-        ];
-
-        // Make sure all letters are used
-        let missing = get_missing_letters(&config);
-        assert!(missing.is_empty(), "Config should use all letters");
-
-        // No early stopping
-        let stop_at = f32::MAX;
-        let iterations = 10;
-
-        // Time and execute standard evaluate
-        let start = Instant::now();
-        let mut score_standard = 0.0;
-        for _ in 0..iterations {
-            score_standard = evaluate(&freq_list, &config, stop_at);
-        }
-        let duration_standard = start.elapsed();
-        let avg_duration_standard = duration_standard.as_secs_f64() / iterations as f64;
-
-        // Time and execute evaluate_arr_idx multiple times
-        let start = Instant::now();
-        let mut score_idx = 0.0;
-        let hm_idx = &mut HashMap::<u128, u32>::new();
-        for _ in 0..iterations {
-            hm_idx.clear();
-            score_idx = evaluate_arr_idx(&freq_list, &config, hm_idx, stop_at);
-        }
-        let duration_idx = start.elapsed();
-        let avg_duration_idx = duration_idx.as_secs_f64() / iterations as f64;
-
-        let mut count_hm_64: FxHashMap<u64, u8> = FxHashMap::<u64, u8>::new();
-        let mut count_hm_128: FxHashMap<u128, u8> = FxHashMap::<u128, u8>::new();
-        let mut count_hm_vec: FxHashMap<Vec<u8>, u8> = FxHashMap::<Vec<u8>, u8>::new();
-
-        // Time and execute evaluate_arr_opt multiple times
-        let start = Instant::now();
-        let mut score_opt = 0.0;
-        for _ in 1..iterations + 1 {
-            (score_opt, _) = evaluate_arr_opt(
-                &freq_lists_opt,
-                &config,
-                &mut count_hm_64,
-                &mut count_hm_128,
-                &mut count_hm_vec,
-                stop_at,
-            );
-            count_hm_128.clear();
-            count_hm_64.clear();
-            count_hm_vec.clear();
-        }
-        let duration_opt = start.elapsed();
-        let avg_duration_opt = duration_opt.as_secs_f64() / iterations as f64;
-
-        // Print results
-        println!("Running each function {} times:", iterations);
-        println!(
-            "standard evaluate: {:.4}ms total, {:.4}ms per run",
-            duration_standard.as_secs_f64() * 1000.0,
-            avg_duration_standard * 1000.0
-        );
-        println!(
-            "evaluate_arr_idx:  {:.4}ms total, {:.4}ms per run",
-            duration_idx.as_secs_f64() * 1000.0,
-            avg_duration_idx * 1000.0
-        );
-        println!(
-            "evaluate_arr_opt:  {:.4}ms total, {:.4}ms per run",
-            duration_opt.as_secs_f64() * 1000.0,
-            avg_duration_opt * 1000.0
-        );
-
-        // Print speedups relative to standard evaluate
-        println!("Speedups relative to standard evaluate:");
-        println!(
-            "evaluate_arr_idx: {:.2}x",
-            avg_duration_standard / avg_duration_idx
-        );
-        println!(
-            "evaluate_arr_opt: {:.2}x",
-            avg_duration_standard / avg_duration_opt
-        );
-
-        // If opt is faster than idx, show that speedup too
-        if avg_duration_opt < avg_duration_idx {
-            println!(
-                "Speedup opt vs idx: {:.2}x",
-                avg_duration_idx / avg_duration_opt
-            );
-        } else {
-            println!(
-                "Slowdown opt vs idx: {:.2}x",
-                avg_duration_opt / avg_duration_idx
-            );
-        }
-
-        // Note: The scores might not match exactly due to different data structures
-        // and processing methods, but they should be in the same ballpark
-        println!(
-            "Scores: standard={}, idx={}, opt={}",
-            score_standard, score_idx, score_opt
-        );
-    }
     #[test]
     fn test_freq_list_clone_time() {
         // Load the frequency list
-        let freq_list = create_freq_list("./word_freq.json");
+        let freq_list = create_freq_list("./word_freq_full.json");
 
         // Measure time to clone the frequency list
         let iterations = 100;
@@ -1630,7 +1268,7 @@ mod tests {
     #[test]
     fn test_keyboard_score() {
         // Create frequency list
-        let freq_list = create_freq_list("./word_freq.json");
+        let freq_list = create_freq_list("./word_freq_full.json");
 
         // Create config for the specified keyboard layout
         // Create config for the specified keyboard layout
@@ -1764,9 +1402,3 @@ mod tests {
         );
     }
 }
-
-/*
-1: 3
-2: 4
-3: 6
-*/

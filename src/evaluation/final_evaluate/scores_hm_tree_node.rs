@@ -2,7 +2,8 @@ use bincode::{Decode, Encode};
 use gxhash::{HashMap, HashMapExt};
 
 use crate::{
-    evaluation::final_evaluate::scores_hm_tree::save_stream32, general::set32::Set32,
+    evaluation::final_evaluate::scores_hm_tree::save_stream32,
+    general::{partition_id::PartitionId, set32::Set32},
     util::compare_letters,
 };
 use std::collections::VecDeque;
@@ -196,6 +197,30 @@ pub fn build_dyn_trie(mut paths: Vec<(Vec<Set32>, f64)>) -> DynNode {
     }
     paths.clear();
     paths.shrink_to_fit();
+    root
+}
+
+/// Same as `build_dyn_trie`, but each path arrives as its `PartitionId` and is decoded
+/// here. `to_keys` gives `compare_letters` descending order, which is the same order
+/// `filter_sort_letter_seq` gives `build_dyn_trie`.
+pub fn build_dyn_trie_u128(paths: Vec<(PartitionId, f64)>) -> DynNode {
+    let mut root = DynNode::default();
+    for (id, score) in paths {
+        let keys = id.to_keys();
+        let mut current_node = &mut root;
+        for key in keys {
+            let child_idx = current_node.find_in_children_idx(key);
+            if child_idx.is_ok() {
+                current_node = &mut current_node.children[child_idx.unwrap()];
+            } else {
+                let idx = child_idx.unwrap_err();
+                let new_node = DynNode::new(key);
+                current_node.children.insert(idx, new_node);
+                current_node = &mut current_node.children[idx];
+            }
+        }
+        current_node.score += score; // Set the score for the final node
+    }
     root
 }
 

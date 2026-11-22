@@ -4,7 +4,7 @@ use crossbeam_channel::{Receiver, Sender};
 use gxhash::{HashSet, HashSetExt};
 
 use crate::{
-    general::set32::Set32,
+    general::{partition_id::PartitionId, set32::Set32},
     nodes::{node::Node, node_metadata::NodeMetadata, standard_node::StandardNode},
     util::ALPHABET_SET32,
 };
@@ -22,7 +22,7 @@ pub struct IoTask {
 }
 
 pub struct TasksResult {
-    pub parents: HashSet<u128>,
+    pub parents: HashSet<PartitionId>,
     pub nodes_to_eval: Vec<(Set32, Vec<StandardNode>)>,
 }
 pub struct TasksData {
@@ -70,7 +70,7 @@ impl FullEstimateReader {
         //     nodes_to_eval.len(),
         //     tasks.parents_metadata.len()
         // );
-        let parents: HashSet<u128> = tasks
+        let parents: HashSet<PartitionId> = tasks
             .parents_metadata
             .iter()
             .zip(tasks.parents_files.iter())

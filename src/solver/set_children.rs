@@ -15,6 +15,7 @@ use tracing::{debug, info, span, Level};
 use crate::evaluation::evaluate::config_to_opt_letter_map_fast;
 use crate::evaluation::final_evaluate::final_evaluate;
 use crate::general::key_path::KeyPath;
+use crate::general::partition_id::PartitionId;
 use crate::nodes::node::{get_node_dir, get_node_path};
 use crate::nodes::node_metadata::{NodeMetadata, NodeType};
 use crate::nodes::predecessor::{get_full_path_from_predecessor, get_predecessor_layouts};
@@ -187,7 +188,7 @@ pub fn set_children(
                             let should_log_tasks = tasks_received % PRINT_TASK_EVERY == 0;
 
                             let base_predecessors = results.base_nodes;
-                            let predecessors_map: HashMap<u128, Vec<f32>> =
+                            let predecessors_map: HashMap<PartitionId, Vec<f32>> =
                                 results.predecessors_map;
                             if should_log_tasks {
                                 let span_tasks = span!(
@@ -214,7 +215,7 @@ pub fn set_children(
                                     .map(|(k, _)| {
                                         format!(
                                             "[{}]",
-                                            set32s_to_string(&KeyPath::u128_to_keys_sorted(*k))
+                                            set32s_to_string(&k.to_keys())
                                         )
                                     })
                                     .collect_vec();
@@ -344,7 +345,7 @@ fn get_should_log(nodes_seen: usize, print_every: usize) -> bool {
 fn evaluate_node(
     mut node: StandardNode,
     new_node_chunk: &mut Vec<StandardNode>,
-    predecessors_map: &HashMap<u128, Vec<f32>>,
+    predecessors_map: &HashMap<PartitionId, Vec<f32>>,
     hm_static_tree: &HashMap<Set32, StaticTrie32>,
     scorecast: &Scorecast,
     threshold: f32,

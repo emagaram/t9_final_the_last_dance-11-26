@@ -1,16 +1,15 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use micromap::Map;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::seq::IndexedRandom;
 
 fn linear_search(vec: &[i32], target: i32) -> Option<usize> {
     vec.iter().position(|&x| x == target)
 }
 
 fn bench_searches(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let data: Vec<i32> = (0..20).collect();
-    let targets: Vec<i32> = data.choose_multiple(&mut rng, 10).cloned().collect();
+    let targets: Vec<i32> = data.sample(&mut rng, 10).cloned().collect();
     let mut micromap: Map<i32, usize, 27> = Map::new();
     for (i, &value) in data.iter().enumerate() {
         micromap.insert(value, i);

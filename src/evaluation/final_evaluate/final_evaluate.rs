@@ -2,7 +2,7 @@ use crate::{
     evaluation::final_evaluate::{
         scores_hm_tree::get_intersection_score32, scores_hm_tree_node::StaticTrie32,
     },
-    general::{key_path::KeyPath, set32::Set32},
+    general::{partition_id::PartitionId, set32::Set32},
     globals::NUM_LETTERS,
     util::compare_letters,
 };
@@ -137,7 +137,7 @@ pub fn final_evaluate(
     path: &[Set32],
     path_key: Set32,
     letter_idx_map: &[Option<usize>; NUM_LETTERS],
-    predecessors_map: &HashMap<u128, Vec<f32>>,
+    predecessors_map: &HashMap<PartitionId, Vec<f32>>,
     hm_static_tree: &HashMap<Set32, StaticTrie32>,
     should_log: bool,
 ) -> Option<(Vec<f32>, f32)> {
@@ -155,9 +155,9 @@ pub fn final_evaluate(
     let mut score_by_letter_count_f64: Vec<f64> = vec![0.0; num_chars_in_path - 1];
     let sub_paths = all_paths_minus_one(path);
     for sub_path in sub_paths {
-        let key_u128 = KeyPath::keys_to_u128(&sub_path);
+        let sub_path_id = PartitionId::from_keys(&sub_path);
 
-        let score_letter_count = predecessors_map.get(&key_u128);
+        let score_letter_count = predecessors_map.get(&sub_path_id);
         if score_letter_count.is_none() {
             if should_log {
                 debug!(

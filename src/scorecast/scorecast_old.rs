@@ -1,4 +1,3 @@
-use core::f32;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;

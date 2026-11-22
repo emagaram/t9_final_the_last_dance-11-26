@@ -170,8 +170,6 @@ pub fn group_by_length_flattened(freq_list: FreqList) -> FreqListsFlattened {
 
 #[cfg(test)]
 mod tests {
-    use hashbrown::HashMap;
-
     use crate::general::freq_list::group_by_length_flattened;
 
     use super::create_freq_list;
@@ -182,36 +180,6 @@ mod tests {
         assert_eq!(list[1].0.len(), 4);
         assert_eq!(list[2].0.len(), 10);
     }
-    #[test]
-    fn freq_list_init_same() {
-        let list1 = create_freq_list("./word_freq.json");
-        let list2 = create_freq_list("./word_freq.json");
-        assert_eq!(list1[1000].0, list2[1000].0);
-        assert_eq!(list1[5000].0, list2[5000].0);
-        assert_eq!(list1[50000].0, list2[50000].0);
-    }
-    #[test]
-    fn count_num_word_len() {
-        let list1 = create_freq_list("./word_freq.json");
-        let mut len_track: HashMap<usize, usize> = HashMap::new();
-        for word in list1 {
-            len_track
-                .entry(word.0.len())
-                .and_modify(|value| *value += 1)
-                .or_insert(1);
-        }
-        let mut total = 0;
-        for key in 1..50 as usize {
-            if !len_track.contains_key(&key) {
-                continue;
-            }
-            let np = len_track[&key] * (len_track[&key] - 1) / 2;
-            total += np;
-            println!("Len: {}, Num {}, num pairs: {}", key, len_track[&key], np);
-        }
-        println!("Total {}", total);
-    }
-
     #[test]
     fn test_group_by_length_flattened() {
         // Create a simple frequency list for testing
