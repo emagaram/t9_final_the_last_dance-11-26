@@ -1,0 +1,76 @@
+[package]
+name = "t9_project"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aws-config = "1.8.3"
+aws-sdk-s3 = "1.100.0"
+bincode = "2.0.1"
+boomphf = "0.6.0"
+brotli = "8.0.1"
+chrono = "0.4.41"
+criterion = "0.6.0"
+crossbeam = "0.8.4"
+crossbeam-channel = "0.5.15"
+dashmap = "6.1.0"
+fxhash = "0.2.1"
+gxhash = "3.5.0"
+hashbrown = "0.14.5"
+itertools = "0.12.1"
+lazy_static = "1.4.0"
+micromap = "0.1.0"
+nix = "0.30.1"
+num_cpus = "1.17.0"
+once_cell = "1.21.3"
+ordered-float = "4.2.0"
+parking_lot = "0.12.2"
+ph = "0.9.6"
+rand = "0.8.5"
+rayon = "1.10.0"
+reqwest = "0.12.22"
+rustc-hash = "2.1.1"
+ruzstd = "0.8.1"
+# serde = "1.0.219"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.116"
+smallvec = "1.15.0"
+sysinfo = "0.30.11"
+tempfile = "3.20.0"
+thread_local = "1.1.8"
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-tree = "0.4.0"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.dev-opt]
+inherits = "dev"
+opt-level = 3
+debug = false
+debug-assertions = true
+
+[profile.release]
+debug = false
+
+[[bench]]
+name = "micromap"
+harness = false
+[[bench]]
+name = "count_vs_count_ones"
+harness = false
+[[bench]]
+name = "process_tasks"
+harness = false
+[[bench]]
+name = "compression"
+harness = false
+
+
+# [features]
+# io-uring = ["dep:io-uring"]
