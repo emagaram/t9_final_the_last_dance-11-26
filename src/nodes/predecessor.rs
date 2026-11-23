@@ -2,9 +2,7 @@ use std::cmp::Ordering;
 
 use crate::{general::set32::Set32, util::compare_letters};
 
-// 3 3 2
-// 5 4 3 2 2
-
+/// All layouts with minus 1 letters on a key. If a key has 2 letters, remove it.
 pub fn get_predecessor_layouts(layout: &Vec<usize>) -> Vec<(usize, Vec<usize>)> {
     let mut result = Vec::new();
     for i in 0..layout.len() {
@@ -230,7 +228,6 @@ mod tests {
 
         let layout = vec![3];
         let pred_layouts = get_predecessor_layouts(&layout);
-        // [3,3,3,2] [4,3,2,2] [4,3,3]
         assert_eq!(pred_layouts.len(), 1);
         assert_eq!(pred_layouts[0].1, vec![2]);
         assert_eq!(pred_layouts[0].0, 0);

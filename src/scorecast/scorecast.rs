@@ -9,7 +9,7 @@ use tracing::{span, Level};
 use crate::general::set32::Set32;
 use crate::globals::NUM_LETTERS;
 use crate::settings::SCORECAST_THREAD_NUMS;
-use crate::util::{set32_to_string, ALPHABET_SET32};
+use crate::util::ALPHABET_SET32;
 use bincode::{config, Decode, Encode};
 
 use rayon::prelude::*;
@@ -18,8 +18,6 @@ use rayon::prelude::*;
 pub struct ScorecastEncodeable {
     /// Given a Set32 with num of current keys equal to last completed layers, returns the smallest score for that Set32 assuming target_num_keys as the final number of keys.
     pub partial_estimates_target_num_keys: HashMap<Set32, f32>,
-    /// Same as partial estimates but num of current keys is higher to allow each completed layer to not contribute to the key count.
-    pub partial_estimates_extra_keys: HashMap<Set32, f32>,
     pub pathkey_scores_by_layer: Vec<HashMap<Set32, f32>>, // Base scores for each layer, used to create new scores
     pub target_num_keys: usize,
     pub current_pathkey_scores: HashMap<Set32, f32>, // Current base scores to update base_scores
@@ -29,7 +27,6 @@ impl ScorecastEncodeable {
     pub fn convert_to_scorecast(self) -> Scorecast {
         Scorecast {
             partial_estimates_target_num_keys: self.partial_estimates_target_num_keys,
-            partial_estimates_extra_keys: self.partial_estimates_extra_keys,
             pathkey_scores_by_layer: self.pathkey_scores_by_layer,
             target_num_keys: self.target_num_keys,
             current_pathkey_scores: self.current_pathkey_scores.clone().into_iter().collect(),
@@ -38,7 +35,6 @@ impl ScorecastEncodeable {
     pub fn from_scorecast(scorecast: &Scorecast) -> Self {
         Self {
             partial_estimates_target_num_keys: scorecast.partial_estimates_target_num_keys.clone(),
-            partial_estimates_extra_keys: scorecast.partial_estimates_extra_keys.clone(),
             pathkey_scores_by_layer: scorecast.pathkey_scores_by_layer.clone(),
             target_num_keys: scorecast.target_num_keys,
             current_pathkey_scores: scorecast
@@ -55,7 +51,6 @@ pub struct Scorecast {
     /// Given a Set32 with num of current keys equal to last completed layers, returns the smallest score for that Set32 assuming target_num_keys as the final number of keys.
     pub partial_estimates_target_num_keys: HashMap<Set32, f32>,
     /// Same as partial estimates but num of current keys is higher to allow each completed layer to not contribute to the key count.
-    pub partial_estimates_extra_keys: HashMap<Set32, f32>,
     pub pathkey_scores_by_layer: Vec<HashMap<Set32, f32>>, // Base scores for each layer, used to create new scores
     pub target_num_keys: usize,
     current_pathkey_scores: DashMap<Set32, f32>, // Current base scores to update base_scores
@@ -64,7 +59,6 @@ impl Scorecast {
     pub fn new(target_num_keys: usize) -> Self {
         Self {
             partial_estimates_target_num_keys: HashMap::new(),
-            partial_estimates_extra_keys: HashMap::new(),
             pathkey_scores_by_layer: vec![],
             target_num_keys,
             current_pathkey_scores: DashMap::new(),
@@ -86,6 +80,7 @@ impl Scorecast {
         }
         rename(file.path(), path).expect("Unable to rename temp file to scorecast file");
     }
+
     pub fn read(path: &str) -> Result<Scorecast, std::io::Error> {
         let file = File::open(path)?;
         let mut reader = BufReader::new(file);
@@ -110,27 +105,7 @@ impl Scorecast {
 
     pub fn get_score_target_num_keys(&self, keys: Set32) -> Option<f32> {
         let other = ALPHABET_SET32.difference(keys);
-        if (other.count_ones() as usize) < self.target_num_keys - self.pathkey_scores_by_layer.len()
-        {
-            println!(
-                "Input:{}, Other:{} has fewer letters than layers remaining: {} < {}",
-                set32_to_string(keys),
-                set32_to_string(other),
-                other.count_ones(),
-                self.target_num_keys - self.pathkey_scores_by_layer.len()
-            );
-            return Some(0.0); // Fewer letters than layers remaining
-        }
         let res = self.partial_estimates_target_num_keys.get(&other).copied();
-        res
-    }
-
-    pub fn get_score_extra_keys(&self, keys: Set32) -> Option<f32> {
-        let other = ALPHABET_SET32.difference(keys);
-        if (other.count_ones() as usize) < self.target_num_keys {
-            return Some(0.0); // Fewer letters than layers remaining
-        }
-        let res = self.partial_estimates_extra_keys.get(&other).copied();
         res
     }
 
@@ -143,9 +118,6 @@ impl Scorecast {
             threshold,
             self.target_num_keys - self.pathkey_scores_by_layer.len(),
         );
-        // self.partial_estimates_extra_keys =
-        //     self.generate_partial_estimates(threshold, self.target_num_keys);
-        // self.generate_full_estimates();
     }
 
     fn update_pathkey_scores_by_layer(&mut self) {

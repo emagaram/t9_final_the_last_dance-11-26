@@ -78,11 +78,8 @@ pub fn set_children(
         let pred_layouts = get_predecessor_layouts(&full_layout);
         let mut predecessors_metadata: Vec<NodeMetadata> = Vec::new();
 
-        for (_index_changed, layout) in &pred_layouts {
-            match {
-                let md = NodeMetadata::get_node_metadata(directory, &layout, NodeType::Standard);
-                md
-            } {
+        for (_, layout) in &pred_layouts {
+            match { NodeMetadata::get_node_metadata(directory, &layout, NodeType::Standard) } {
                 Some(metadata) => predecessors_metadata.push(metadata),
                 None => {
                     info!(layout = ?layout, "Failed to get node metadata for layout");
@@ -144,6 +141,8 @@ pub fn set_children(
             let chunk = target_combo_sets
                 .drain(target_combo_sets.len() - chunk_size..)
                 .collect_vec();
+
+            // Sends a bunch of disk reading tasks to some threads. The result_sender then forwards the disk retrieval data
             node_data_reader
                 .task_sender
                 .clone()
@@ -212,12 +211,7 @@ pub fn set_children(
                                     .collect_vec();
                                 let predecessors_strings = predecessors_map
                                     .iter()
-                                    .map(|(k, _)| {
-                                        format!(
-                                            "[{}]",
-                                            set32s_to_string(&k.to_keys())
-                                        )
-                                    })
+                                    .map(|(k, _)| format!("[{}]", set32s_to_string(&k.to_keys())))
                                     .collect_vec();
                                 debug!(base_predecessors_paths = ?base_predecessors_paths);
                                 debug!(predecessors_map = ?predecessors_strings);

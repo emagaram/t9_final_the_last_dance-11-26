@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use crate::scorecast::ais_bigrams::AISBigrams;
 use crate::scorecast::scorecast::{Scorecast, ScorecastEncodeable};
 
 #[derive(Debug)]
@@ -14,6 +15,7 @@ pub struct State {
     pub next_layouts: Vec<Vec<usize>>,
     pub layer: usize,
     pub scorecast: Scorecast,
+    pub ais_bigrams: AISBigrams,
     pub nodes_created_layer_counter: AtomicUsize,
     pub total_nodes_created_counter: AtomicUsize,
     pub nodes_seen_layer_counter: AtomicUsize,
@@ -30,6 +32,7 @@ impl State {
             next_layouts: self.next_layouts.clone(),
             layer: self.layer,
             scorecast: ScorecastEncodeable::from_scorecast(&self.scorecast),
+            ais_bigrams: self.ais_bigrams.clone(),
             nodes_created_layer_counter: self.nodes_created_layer_counter.load(Ordering::Relaxed),
             total_nodes_created_counter: self.total_nodes_created_counter.load(Ordering::Relaxed),
             nodes_seen_layer_counter: self.nodes_seen_layer_counter.load(Ordering::Relaxed),
@@ -45,6 +48,7 @@ impl State {
             next_layouts: serialized.next_layouts,
             layer: serialized.layer,
             scorecast: ScorecastEncodeable::convert_to_scorecast(serialized.scorecast),
+            ais_bigrams: serialized.ais_bigrams,
             nodes_created_layer_counter: AtomicUsize::new(serialized.nodes_created_layer_counter),
             total_nodes_created_counter: AtomicUsize::new(serialized.total_nodes_created_counter),
             nodes_seen_layer_counter: AtomicUsize::new(serialized.nodes_seen_layer_counter),
@@ -88,6 +92,7 @@ pub struct StateSerialized {
     pub next_layouts: Vec<Vec<usize>>,
     pub layer: usize,
     pub scorecast: ScorecastEncodeable,
+    pub ais_bigrams: AISBigrams,
     pub nodes_created_layer_counter: usize,
     pub total_nodes_created_counter: usize,
     pub nodes_seen_layer_counter: usize,

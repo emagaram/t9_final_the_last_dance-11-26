@@ -15,13 +15,13 @@ impl Set32 {
     pub const MAX_SIZE: u32 = 32;
     pub const MAX_ITEM_VALUE: u32 = 31;
     pub const MIN_ITEM_VALUE: u32 = 0;
-    pub fn value(&self) -> u32 {
+    pub const fn value(&self) -> u32 {
         self.0
     }
     pub fn ones_indices(&self) -> Vec<u32> {
         self.into_iter().collect()
     }
-    pub fn fill_from_right(count: u32) -> Set32 {
+    pub const fn fill_from_right(count: u32) -> Set32 {
         debug_assert!(count <= Self::MAX_SIZE);
         let bits = match count {
             32 => !0,
@@ -29,7 +29,7 @@ impl Set32 {
         };
         Set32(bits)
     }
-    pub fn fill_from_left(count: u32) -> Set32 {
+    pub const fn fill_from_left(count: u32) -> Set32 {
         debug_assert!(count <= Self::MAX_SIZE);
         let bits = match count {
             0 => 0,
@@ -38,67 +38,67 @@ impl Set32 {
         };
         Set32(bits)
     }
-    pub fn add(&self, bit: u32) -> Set32 {
+    pub const fn add(&self, bit: u32) -> Set32 {
         debug_assert!(bit <= Self::MAX_ITEM_VALUE);
         Set32(self.0 | 1 << bit)
     }
 
-    pub fn singleton(bit: u32) -> Set32 {
+    pub const fn singleton(bit: u32) -> Set32 {
         debug_assert!(bit <= Self::MAX_ITEM_VALUE);
         Set32(1 << bit)
     }
 
-    pub fn contains(&self, bit: u32) -> bool {
+    pub const fn contains(&self, bit: u32) -> bool {
         debug_assert!(bit <= Self::MAX_ITEM_VALUE);
         self.0 & (1 << bit) != 0
     }
 
-    pub fn count_ones(&self) -> u32 {
+    pub const fn count_ones(&self) -> u32 {
         self.0.count_ones()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0 == 0
     }
 
-    pub fn difference(&self, other: Set32) -> Set32 {
+    pub const fn difference(&self, other: Set32) -> Set32 {
         Set32(self.0 & !other.0)
     }
 
-    pub fn remove(&self, bit: u32) -> Set32 {
+    pub const fn remove(&self, bit: u32) -> Set32 {
         debug_assert!(bit <= Self::MAX_ITEM_VALUE);
         Set32(self.0 & !(1 << bit))
     }
 
-    pub fn union(&self, other: Set32) -> Set32 {
+    pub const fn union(&self, other: Set32) -> Set32 {
         Set32(self.0 | other.0)
     }
 
-    pub fn intersect(&self, other: Set32) -> Set32 {
+    pub const fn intersect(&self, other: Set32) -> Set32 {
         Set32(self.0 & other.0)
     }
 
-    pub fn max_item(&self) -> Option<u32> {
+    pub const fn max_item(&self) -> Option<u32> {
         match self.0.leading_zeros() {
             u32::BITS => None,
             n => Some(u32::BITS - n - 1),
         }
     }
 
-    pub fn min_item(&self) -> Option<u32> {
+    pub const fn min_item(&self) -> Option<u32> {
         match self.0.trailing_zeros() {
             32 => None,
             n => Some(n),
         }
     }
-    pub fn max_zero(&self, alphabet_set: Set32) -> Option<u32> {
+    pub const fn max_zero(&self, alphabet_set: Set32) -> Option<u32> {
         match (self.0 | !alphabet_set.0).leading_ones() {
             u32::BITS => None,
             n => Some(u32::BITS - n - 1),
         }
     }
 
-    pub fn min_zero(&self) -> Option<u32> {
+    pub const fn min_zero(&self) -> Option<u32> {
         match self.0.trailing_ones() {
             32 => None,
             n => Some(n),
