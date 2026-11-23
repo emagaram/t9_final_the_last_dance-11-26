@@ -252,17 +252,17 @@ mod tests {
     #[test]
     fn set32_fill_from_left_when_max() {
         assert_eq!(
-            Set32::fill_from_left(32).to_string(),
-            "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]"
+            Set32::fill_from_left(32).ones_indices(),
+            (0..32).collect::<Vec<u32>>()
         );
     }
     #[test]
     fn set32_fill_from_left_when_not_zero() {
         assert_eq!(
-            Set32::fill_from_left(30).to_string(),
-            "[2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]"
+            Set32::fill_from_left(30).ones_indices(),
+            (2..32).collect::<Vec<u32>>()
         );
-        assert_eq!(Set32::fill_from_left(1).to_string(), "[31]");
+        assert_eq!(Set32::fill_from_left(1).ones_indices(), vec![31]);
     }
     #[test]
     fn fill_when_zero() {
@@ -272,23 +272,23 @@ mod tests {
     #[test]
     fn fill_when_max() {
         assert_eq!(
-            Set32::fill_from_right(32).to_string(),
-            "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]"
+            Set32::fill_from_right(32).ones_indices(),
+            (0..32).collect::<Vec<u32>>()
         );
     }
 
     #[test]
     fn fill_when_not_zero() {
-        assert_eq!(Set32::fill_from_right(1).to_string(), "[0]");
-        assert_eq!(Set32::fill_from_right(2).to_string(), "[0,1]");
+        assert_eq!(Set32::fill_from_right(1).ones_indices(), vec![0]);
+        assert_eq!(Set32::fill_from_right(2).ones_indices(), vec![0, 1]);
     }
 
     #[test]
     fn add() {
         let zero = Set32::EMPTY;
-        assert_eq!(zero.to_string(), "[]");
-        assert_eq!(zero.add(3).add(8).to_string(), "[3,8]");
-        assert_eq!(zero.add(31).to_string(), "[31]");
+        assert_eq!(zero.ones_indices(), Vec::<u32>::new());
+        assert_eq!(zero.add(3).add(8).ones_indices(), vec![3, 8]);
+        assert_eq!(zero.add(31).ones_indices(), vec![31]);
     }
 
     // #[test]
@@ -319,27 +319,29 @@ mod tests {
     #[test]
     fn remove_test() {
         fn test(bits: &str, item: u32, expected: &str) {
-            assert_eq!(string_to_bits(bits).remove(item).to_string(), expected);
+            assert_eq!(string_to_bits(bits).remove(item), string_to_bits(expected));
         }
-        test("", 0, "[]");
-        test("", 1, "[]");
-        test("", 31, "[]");
-        test("0", 0, "[]");
-        test("0", 1, "[0]");
-        test("0,1,2", 1, "[0,2]");
-        test("0,1,2,3,4,5", 5, "[0,1,2,3,4]");
-        test("0,1,2,3,4,5,31", 31, "[0,1,2,3,4,5]");
-        test("0,1,2,3,4,5,31", 0, "[1,2,3,4,5,31]");
+        test("", 0, "");
+        test("", 1, "");
+        test("", 31, "");
+        test("0", 0, "");
+        test("0", 1, "0");
+        test("0,1,2", 1, "0,2");
+        test("0,1,2,3,4,5", 5, "0,1,2,3,4");
+        test("0,1,2,3,4,5,31", 31, "0,1,2,3,4,5");
+        test("0,1,2,3,4,5,31", 0, "1,2,3,4,5,31");
     }
 
     #[test]
     fn to_string_test() {
+        // Letters in alphabetical order (bit 26 = a ... bit 1 = z, bit 0 = ')
         let data = [
-            ("", "[]"),
-            ("1", "[1]"),
-            ("1,2,3", "[1,2,3]"),
-            ("5,4,3", "[3,4,5]"),
-            ("15,4,0", "[0,4,15]"),
+            ("", ""),
+            ("1", "z"),
+            ("1,2,3", "xyz"),
+            ("5,4,3", "vwx"),
+            ("15,4,0", "lw'"),
+            ("26,25,24", "abc"),
         ];
         fn test(start: &str, expected: &str) -> () {
             let start = string_to_bits(start);
@@ -367,9 +369,9 @@ mod tests {
 
     #[test]
     fn singleton_test() {
-        assert_eq!(Set32::singleton(0).to_string(), "[0]");
-        assert_eq!(Set32::singleton(31).to_string(), "[31]");
-        assert_eq!(Set32::singleton(5).to_string(), "[5]");
+        assert_eq!(Set32::singleton(0).ones_indices(), vec![0]);
+        assert_eq!(Set32::singleton(31).ones_indices(), vec![31]);
+        assert_eq!(Set32::singleton(5).ones_indices(), vec![5]);
     }
 
     #[test]
@@ -483,8 +485,7 @@ mod tests {
             (1..ones_count).for_each(|subset_size| {
                 let set = bits
                     .subsets_of_size(subset_size as u32)
-                    .map(|b| b.to_string())
-                    .collect::<std::collections::HashSet<String>>();
+                    .collect::<std::collections::HashSet<Set32>>();
                 let expected_count = choose_count(ones_count as u32, subset_size as u32);
                 assert_eq!(set.len(), expected_count as usize);
             });

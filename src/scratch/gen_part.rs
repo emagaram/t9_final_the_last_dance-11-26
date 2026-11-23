@@ -285,7 +285,11 @@ mod tests {
         // For set of size 4: {0,1,2,3} - partitions without singletons:
         // {{0,1,2,3}}, {{0,1},{2,3}}, {{0,2},{1,3}}, {{0,3},{1,2}}
         let set4 = Set32::EMPTY.add(0).add(1).add(2).add(3);
-        assert_eq!(count_partitions_for_set32(set4), 7); // 4 partitions as listed above
+        assert_eq!(count_partitions_for_set32(set4), 4); // 4 partitions as listed above
+
+        // For set of size 5: {{0..4}} plus C(5,2) = 10 ways to split into a pair and a triple
+        let set5 = set4.add(4);
+        assert_eq!(count_partitions_for_set32(set5), 11);
     }
 
     #[test]

@@ -320,25 +320,36 @@ mod tests {
             )
         }
         assert_eq!(ranges.len(), 2);
+        // Dropping the new 2-key leaves the parent range unchanged
         let r0 = ranges.get(&layout_to_key(&vec![3, 3])).unwrap();
-        println!(
-            "r0: {}->{}",
-            set32s_to_string(&r0.0),
-            set32s_to_string(&r0.1)
-        );
-        assert_eq!(r0.0, create_set32s_vec!("gkl,z'"));
+        assert_eq!(r0.0, create_set32s_vec!("cuv,gkl"));
+        assert_eq!(r0.1, create_set32s_vec!("axy,bcd"));
+        // Shrinking the last 3-key (start drops its first letter, end its last)
+        let r1 = ranges.get(&layout_to_key(&vec![3, 2, 2])).unwrap();
+        assert_eq!(r1.0, create_set32s_vec!("cuv,kl,z'"));
+        assert_eq!(r1.1, create_set32s_vec!("axy,bc,ef"));
     }
 
     #[test]
     fn test_get_n_unseen_letters() {
         let layout = vec![4, 3, 2];
         let seen = create_set32s_vec!("adxy,gkl");
+        // n = size of the new (last) key, so 2 letters each
         let unseen_smallest =
             get_n_unseen_letters(&seen, layout[layout.len() - 1], SmallestOrLargest::Smallest);
-        assert_eq!(unseen_smallest.to_string(), "wz'");
+        assert_eq!(unseen_smallest, create_set32_str!("z'"));
         let unseen_largest =
             get_n_unseen_letters(&seen, layout[layout.len() - 1], SmallestOrLargest::Largest);
-        assert_eq!(unseen_largest, create_set32_str!("bce"));
+        assert_eq!(unseen_largest, create_set32_str!("bc"));
+        // A larger n takes more letters from the same end
+        assert_eq!(
+            get_n_unseen_letters(&seen, 3, SmallestOrLargest::Smallest),
+            create_set32_str!("wz'")
+        );
+        assert_eq!(
+            get_n_unseen_letters(&seen, 3, SmallestOrLargest::Largest),
+            create_set32_str!("bce")
+        );
     }
     #[test]
     fn test_get_key_to_remove_children() {

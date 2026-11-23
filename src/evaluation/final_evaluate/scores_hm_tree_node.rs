@@ -271,8 +271,11 @@ pub fn build_static_trie(root: DynNode) -> StaticTrie64 {
         }
 
         // Record slice describing `dyn_node`'s children.
-        nodes[parent_idx].first_edge = start as u32;
-        nodes[parent_idx].edge_count = (edges.len() - start) as u16;
+        // Checked: an `as` cast would silently truncate, dropping children from lookups
+        nodes[parent_idx].first_edge =
+            u32::try_from(start).expect("first_edge exceeds u32 in static trie");
+        nodes[parent_idx].edge_count = u16::try_from(edges.len() - start)
+            .expect("edge_count exceeds u16 in static trie");
     }
     StaticTrie64 { nodes, edges }
 }

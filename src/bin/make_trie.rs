@@ -1,6 +1,6 @@
 use t9_project::evaluation::make_trie::{make_trie, trie_path_for_dict};
 
-// cargo run --release --bin make_trie -- word_freq_20000.json
+// RUSTFLAGS="-C target-cpu=native" cargo run --release --bin make_trie -- word_freq_20000.json
 fn main() {
     let dict = std::env::args()
         .nth(1)
