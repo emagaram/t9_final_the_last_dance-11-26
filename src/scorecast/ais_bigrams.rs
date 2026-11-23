@@ -89,12 +89,18 @@ impl AISBigrams {
         Set32::EMPTY.add(lo as u32).add(hi as u32)
     }
 
+    /// Whether interactions with `other_letters` are recorded (none of them excluded).
+    pub const fn tracks(other_letters: Set32) -> bool {
+        other_letters.intersect(EXCLUDED_CHARS_SET32).is_empty()
+    }
+
+    /// Records `score` = interaction of `bigram` with the letters on the other keys, under `other_letters`.
     pub fn update_bigram_base_scores(&self, bigram: Set32, other_letters: Set32, score: f32) {
-        let full_letters: Set32 = other_letters.union(bigram);
-        if !full_letters.intersect(EXCLUDED_CHARS_SET32).is_empty() {
+        debug_assert!(other_letters.intersect(bigram).is_empty());
+        if !Self::tracks(other_letters) {
             return;
         }
-        self.scorecasts[Self::bigram_index(bigram)].update_current_base_scores(full_letters, score);
+        self.scorecasts[Self::bigram_index(bigram)].update_current_base_scores(other_letters, score);
     }
     pub fn get_bigram_score(&self, bigram: Set32, other_letters: Set32) -> Option<f32> {
         let full_letters: Set32 = other_letters.union(bigram).union(EXCLUDED_CHARS_SET32);
@@ -155,14 +161,22 @@ mod tests {
         bigrams.update_bigram_base_scores(bigram, create_set32_str!("tz"), 1.0);
         assert!(recorded(&bigrams, bigram).is_empty());
 
-        // All valid letters: recorded under bigram ∪ other_letters
+        // All valid letters: recorded under other_letters only
         bigrams.update_bigram_base_scores(bigram, create_set32_str!("ts"), 2.0);
         let scores = recorded(&bigrams, bigram);
         assert_eq!(scores.len(), 1);
-        assert_eq!(scores.get(&create_set32_str!("aets")), Some(&2.0));
+        assert_eq!(scores.get(&create_set32_str!("ts")), Some(&2.0));
 
         // Only the target bigram's scorecast is touched
         assert!(recorded(&bigrams, create_set32_str!("at")).is_empty());
+
+        // Excluded letters are allowed in the bigram itself
+        let excluded_bigram = create_set32_str!("az");
+        bigrams.update_bigram_base_scores(excluded_bigram, create_set32_str!("ts"), 1.0);
+        assert_eq!(
+            recorded(&bigrams, excluded_bigram).get(&create_set32_str!("ts")),
+            Some(&1.0)
+        );
     }
 
     #[test]
@@ -196,7 +210,7 @@ mod tests {
             bigrams.update_bigram_base_scores(bigram, create_set32_str!("ts"), score);
         }
         assert_eq!(
-            recorded(&bigrams, bigram).get(&create_set32_str!("aets")),
+            recorded(&bigrams, bigram).get(&create_set32_str!("ts")),
             Some(&1.5)
         );
     }

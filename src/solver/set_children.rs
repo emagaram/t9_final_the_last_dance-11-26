@@ -22,7 +22,7 @@ use crate::nodes::predecessor::{get_full_path_from_predecessor, get_predecessor_
 use crate::nodes::reader::{IoTask, IoTaskType, SetChildrenReader, TasksData};
 use crate::nodes::standard_node::StandardNode;
 use crate::nodes::writer::{Task, WriterWorker};
-use crate::scorecast::scorecast::Scorecast;
+use crate::scorecast::{ais_bigrams::AISBigrams, scorecast::Scorecast};
 use crate::state::State;
 
 use crate::settings::{
@@ -163,6 +163,7 @@ pub fn set_children(
         drop(result_sender);
         let average_read_channel_len = {
             let scorecast = &state.scorecast;
+            let ais_bigrams = &state.ais_bigrams;
             let nodes_seen_layer_counter = &state.nodes_seen_layer_counter;
             let total_seen_layer_counter = &state.total_nodes_seen_counter;
             let nodes_created_layer_counter = &state.nodes_created_layer_counter;
@@ -258,6 +259,7 @@ pub fn set_children(
                                         &predecessors_map,
                                         hm_static_tree,
                                         scorecast,
+                                        ais_bigrams,
                                         threshold,
                                         should_log_node,
                                         vec![
@@ -342,6 +344,7 @@ fn evaluate_node(
     predecessors_map: &HashMap<PartitionId, Vec<f32>>,
     hm_static_tree: &HashMap<Set32, StaticTrie32>,
     scorecast: &Scorecast,
+    ais_bigrams: &AISBigrams,
     threshold: f32,
     should_log: bool,
     counters: Vec<&AtomicUsize>,
@@ -361,6 +364,20 @@ fn evaluate_node(
     let (score_by_letter_count, score) = eval.unwrap();
     if score > threshold {
         return;
+    }
+    for (key_idx, &key) in node.path.keys.iter().enumerate() {
+        let other_letters = node.path.key_set.difference(key);
+        if key.count_ones() != 2 || !AISBigrams::tracks(other_letters) {
+            continue;
+        }
+        if let Some(interaction) = final_evaluate::bigram_interaction_score(
+            &node.path.keys,
+            key_idx,
+            &score_by_letter_count,
+            predecessors_map,
+        ) {
+            ais_bigrams.update_bigram_base_scores(key, other_letters, interaction);
+        }
     }
     node.score = score;
     node.score_by_letter_count = score_by_letter_count;

@@ -206,12 +206,194 @@ pub fn final_evaluate(
     ))
 }
 
+/// Interaction of the 2-letter key `path[key_idx]` with the other keys, divided by the number of keys in `path`:
+/// (score(P) - score(P minus K) - score([K])) / |P|.
+/// score([K]) is the single {g,h} conditional, the only one P has on 2 letters that P minus K lacks,
+/// so it's the k=2 bucket difference.
+pub fn bigram_interaction_score(
+    path: &[Set32],
+    key_idx: usize,
+    score_by_letter_count: &[f32],
+    predecessors_map: &HashMap<PartitionId, Vec<f32>>,
+) -> Option<f32> {
+    let rest_scores = scores_without_key(path, key_idx, predecessors_map)?;
+    let whole: f64 = score_by_letter_count.iter().map(|&s| s as f64).sum();
+    let whole_minus_bigram: f64 = rest_scores.iter().map(|&s| s as f64).sum();
+    let bigram = score_by_letter_count[0] as f64 - rest_scores[0] as f64;
+    Some(((whole - whole_minus_bigram - bigram).max(0.0) / path.len() as f64) as f32)
+}
+
+/// Buckets of `path` without the 2-letter key `path[key_idx]`, or None if no other keys are left.
+fn scores_without_key<'a>(
+    path: &[Set32],
+    key_idx: usize,
+    predecessors_map: &'a HashMap<PartitionId, Vec<f32>>,
+) -> Option<&'a Vec<f32>> {
+    debug_assert_eq!(
+        path[key_idx].count_ones(),
+        2,
+        "key must have exactly 2 letters"
+    );
+    let rest: Vec<Set32> = path
+        .iter()
+        .enumerate()
+        .filter_map(|(i, key)| if i != key_idx { Some(*key) } else { None })
+        .collect();
+    if rest.is_empty() {
+        return None;
+    }
+    predecessors_map.get(&PartitionId::from_keys(&rest))
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::create_set32_str;
+    use crate::{
+        create_set32_str, create_set32s_vec,
+        evaluation::{
+            evaluate::{config_to_opt_letter_map_fast, evaluate},
+            final_evaluate::scores_hm_tree::{
+                gen_hm_dyn_tree_new, gen_hm_static_tree32, gen_hm_vec_new,
+            },
+        },
+        general::freq_list::{create_freq_list, FreqList},
+        util::{set32_to_string, set32s_to_string, ALPHABET_SET32},
+    };
     use std::time::Instant;
+
+    /// Brute-force score of `keys` with every unplaced letter on its own key (`evaluate` needs every letter mapped).
+    fn evaluate_keys(freq_list: &FreqList, keys: &[Set32]) -> f64 {
+        let key_set = keys.iter().fold(Set32::EMPTY, |acc, key| acc.union(*key));
+        let mut config = keys.to_vec();
+        config.extend(
+            ALPHABET_SET32
+                .difference(key_set)
+                .ones_indices()
+                .into_iter()
+                .map(Set32::singleton),
+        );
+        evaluate(freq_list, &config, f32::MAX) as f64
+    }
+
+    /// Buckets for `path` from the real DP: fills `predecessors_map` with every minus-one
+    /// sub-path first (recursively, down to lone 2-keys), then runs `final_evaluate`.
+    fn dp_buckets(
+        path: &[Set32],
+        predecessors_map: &mut HashMap<PartitionId, Vec<f32>>,
+        hm_static_tree: &HashMap<Set32, StaticTrie32>,
+    ) -> Vec<f32> {
+        let id = PartitionId::from_keys(path);
+        if let Some(scores) = predecessors_map.get(&id) {
+            return scores.clone();
+        }
+        for sub_path in all_paths_minus_one(path) {
+            dp_buckets(&sub_path, predecessors_map, hm_static_tree);
+        }
+        let key_set = path.iter().fold(Set32::EMPTY, |acc, key| acc.union(*key));
+        let letter_map = config_to_opt_letter_map_fast(path.iter());
+        let (scores, _) = final_evaluate(
+            path,
+            key_set,
+            &letter_map,
+            predecessors_map,
+            hm_static_tree,
+            false,
+        )
+        .expect("every sub-path was scored first");
+        predecessors_map.insert(id, scores.clone());
+        scores
+    }
+
+    // RUSTFLAGS="-Awarnings" cargo test --release test_bigram_interaction_score_vs_evaluate -- --nocapture
+    #[test]
+    fn test_bigram_interaction_score_vs_evaluate() {
+        let dict = "word_freq_2000.json";
+        let hm_static_tree = gen_hm_static_tree32(gen_hm_dyn_tree_new(gen_hm_vec_new(dict)));
+        let freq_list = create_freq_list(dict);
+
+        // (layout, its 2-letter key to measure)
+        let cases = [
+            ("abc,def,gh", "gh"),
+            ("eit,ao,ns,hr", "ao"),
+            ("eit,ao,ns,hr", "ns"),
+            ("th,er,an,si", "er"),
+            ("ets,ai,on,hr,ld", "ai"),
+            ("aeiou,st,nr,hl", "st"),
+        ];
+
+        let mut predecessors_map = HashMap::default();
+        let mut nonzero = 0;
+        for (layout, bigram) in cases {
+            let path = create_set32s_vec!(layout);
+            let key = create_set32_str!(bigram);
+            let key_idx = path.iter().position(|&k| k == key).unwrap();
+            let rest: Vec<Set32> = path.iter().copied().filter(|&k| k != key).collect();
+
+            // e.g. (evaluate(abc def gh) - evaluate(abc def) - evaluate(gh)) / 3
+            let whole = evaluate_keys(&freq_list, &path);
+            let whole_minus_bigram = evaluate_keys(&freq_list, &rest);
+            let bigram_alone = evaluate_keys(&freq_list, &[key]);
+            let expected = (whole - whole_minus_bigram - bigram_alone).max(0.0) / path.len() as f64;
+
+            let p_scores = dp_buckets(&path, &mut predecessors_map, &hm_static_tree);
+            let actual =
+                bigram_interaction_score(&path, key_idx, &p_scores, &predecessors_map).unwrap() as f64;
+
+            println!(
+                "{:<16} {}: evaluate ({:.6e} - {:.6e} - {:.6e}) / {} = {:.6e} | bigram_interaction_score {:.6e}",
+                set32s_to_string(&path),
+                set32_to_string(key),
+                whole,
+                whole_minus_bigram,
+                bigram_alone,
+                path.len(),
+                expected,
+                actual
+            );
+            let tol = 1e-4 * expected.abs().max(actual.abs()) + 1e-9;
+            assert!(
+                (actual - expected).abs() <= tol,
+                "{layout} / {bigram}: {actual} vs {expected}"
+            );
+            if expected > 1e-9 {
+                nonzero += 1;
+            }
+        }
+        assert!(nonzero > 0, "every interaction was 0, the comparison proves nothing");
+    }
+
+    #[test]
+    fn test_bigram_interaction_score() {
+        // P = [abc, def, gh] (8 letters, buckets k=2..8); P minus gh = [abc, def] (6 letters, buckets k=2..6)
+        let path = vec![
+            create_set32_str!("abc"),
+            create_set32_str!("def"),
+            create_set32_str!("gh"),
+        ];
+        let p_scores = vec![5.0, 2.0, 4.0, 1.5, 0.0, 0.5, 0.25];
+        let rest_scores = vec![3.0, 2.0, 1.0, 0.5, 0.0];
+        let mut predecessors_map = HashMap::default();
+        predecessors_map.insert(
+            PartitionId::from_keys(&[create_set32_str!("def"), create_set32_str!("abc")]),
+            rest_scores,
+        );
+
+        // (whole 13.25 - rest 6.5 - bigram (5 - 3)) / 3 keys
+        let interaction = bigram_interaction_score(&path, 2, &p_scores, &predecessors_map);
+        assert_eq!(interaction, Some(4.75 / path.len() as f32));
+
+        // A lone 2-key has nothing to interact with
+        assert_eq!(
+            bigram_interaction_score(&[create_set32_str!("gh")], 0, &[1.0], &predecessors_map),
+            None
+        );
+        // Missing predecessor -> None
+        assert_eq!(
+            bigram_interaction_score(&path, 2, &p_scores, &HashMap::default()),
+            None
+        );
+    }
 
     #[test]
     fn test_all_paths_minus_one() {
