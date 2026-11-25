@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use micromap::Map;
 use rand::seq::IndexedRandom;
+use std::hint::black_box;
 
 fn linear_search(vec: &[i32], target: i32) -> Option<usize> {
     vec.iter().position(|&x| x == target)
@@ -17,7 +18,7 @@ fn bench_searches(c: &mut Criterion) {
     c.bench_function("linear_search", |b| {
         b.iter(|| {
             for &target in &targets {
-                let _ = linear_search(&data, target);
+                black_box(linear_search(black_box(&data), black_box(target)));
             }
         })
     });
@@ -25,7 +26,7 @@ fn bench_searches(c: &mut Criterion) {
     c.bench_function("micromap_search", |b| {
         b.iter(|| {
             for &target in &targets {
-                let _ = micromap.get(&target);
+                black_box(black_box(&micromap).get(&black_box(target)));
             }
         })
     });

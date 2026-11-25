@@ -93,6 +93,7 @@ pub fn solver(threshold: f32, target_num_keys: usize) {
             total_nodes_seen = state.total_nodes_seen_counter.load(std::sync::atomic::Ordering::Relaxed),
             elapsed_set_children_time = ?state.total_elapsed_set_children, layer_completed = layer, "Layer completed"
         );
+        // get_scorecast_base_scores(layer, threshold, scorecast);
         update_scorecast(layer, threshold, &mut state.scorecast);
         set_full_estimate(
             &state.scorecast,

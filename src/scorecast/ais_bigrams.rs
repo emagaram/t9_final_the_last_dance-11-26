@@ -76,7 +76,8 @@ impl AISBigrams {
     /// minus the excluded letters.
     pub fn update_bigram_base_scores(&self, bigram: Set32, other_letters: Set32, score: f32) {
         debug_assert!(other_letters.intersect(bigram).is_empty());
-        self.scorecasts[Self::bigram_index(bigram)].update_current_base_scores(other_letters, score);
+        self.scorecasts[Self::bigram_index(bigram)]
+            .update_current_base_scores(other_letters, score);
     }
     pub fn get_bigram_score(&self, bigram: Set32, other_letters: Set32) -> Option<f32> {
         self.scorecasts[Self::bigram_index(bigram)]
@@ -92,6 +93,8 @@ impl AISBigrams {
         }
     }
 }
+
+// abc def ghi jkl mn op qr st uv wx yz '
 
 // cargo test --release --lib ais_bigrams
 #[cfg(test)]

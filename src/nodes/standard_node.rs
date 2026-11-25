@@ -3,6 +3,7 @@ use std::{collections::HashSet, fs::File};
 use bincode::{Decode, Encode};
 
 use crate::{
+    evaluation::final_evaluate::path_scores::PathScores,
     general::{key_path::KeyPath, set32::Set32},
     nodes::{
         node::Node,
@@ -14,8 +15,8 @@ use crate::{
 
 #[derive(Decode, Encode, Clone, Debug, PartialEq)]
 pub struct StandardNode {
-    pub path: KeyPath,                   //~40b
-    pub score_by_letter_count: Vec<f32>, // ~100b
+    pub path: KeyPath,           //~40b
+    pub path_scores: PathScores, // ~80b + up to 6b per 2-letter key + 5b per bigram score
     pub score: f32,
     pub is_valid_set: bool, // We do this instead of Option<bool> to keep the size of the struct constant
     pub is_valid: bool,
@@ -32,7 +33,7 @@ impl Default for StandardNode {
     fn default() -> Self {
         StandardNode {
             path: KeyPath::default(),
-            score_by_letter_count: vec![],
+            path_scores: PathScores::default(),
             score: 0.0,
             is_valid_set: false,
             is_valid: false,
@@ -41,10 +42,10 @@ impl Default for StandardNode {
 }
 
 impl StandardNode {
-    pub fn new(path: KeyPath, score_by_letter_count: Vec<f32>, score: f32) -> Self {
+    pub fn new(path: KeyPath, path_scores: PathScores, score: f32) -> Self {
         StandardNode {
             path,
-            score_by_letter_count,
+            path_scores,
             score,
             is_valid: false,
             is_valid_set: false,
@@ -53,7 +54,7 @@ impl StandardNode {
     pub fn pre_eval(path: KeyPath) -> Self {
         StandardNode {
             path,
-            score_by_letter_count: vec![],
+            path_scores: PathScores::default(),
             score: 0.0,
             is_valid: false,
             is_valid_set: false,

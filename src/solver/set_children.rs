@@ -14,6 +14,7 @@ use tracing::{debug, info, span, Level};
 
 use crate::evaluation::evaluate::config_to_opt_letter_map_fast;
 use crate::evaluation::final_evaluate::final_evaluate;
+use crate::evaluation::final_evaluate::path_scores::PathScores;
 use crate::general::key_path::KeyPath;
 use crate::general::partition_id::PartitionId;
 use crate::nodes::node::{get_node_dir, get_node_path};
@@ -37,6 +38,28 @@ use crate::{
     evaluation::final_evaluate::scores_hm_tree_node::StaticTrie32, general::set32::Set32,
     globals::NUM_LETTERS,
 };
+
+/// Metadata and opened data file of each predecessor of `layout`, in `get_predecessor_layouts` order.
+/// None if any of them has no metadata.
+fn get_predecessor_data(
+    directory: &str,
+    layout: &Vec<usize>,
+) -> Option<(Vec<NodeMetadata>, Vec<File>)> {
+    let mut metadatas = Vec::new();
+    let mut files = Vec::new();
+    for (_, pred_layout) in get_predecessor_layouts(layout) {
+        let Some(metadata) =
+            NodeMetadata::get_node_metadata(directory, &pred_layout, NodeType::Standard)
+        else {
+            info!(layout = ?pred_layout, "Failed to get node metadata for layout");
+            return None;
+        };
+        let path = get_node_path(directory, &metadata.layout, metadata.node_type);
+        files.push(File::open(path).expect("Failed to open predecessor file"));
+        metadatas.push(metadata);
+    }
+    Some((metadatas, files))
+}
 
 pub fn set_children(
     base_layout: &Vec<usize>,
@@ -75,21 +98,13 @@ pub fn set_children(
         let span_set_layout = span!(Level::INFO, "set_layout", full_layout = ?full_layout);
         let _enter_layout = span_set_layout.enter();
 
-        let pred_layouts = get_predecessor_layouts(&full_layout);
-        let mut predecessors_metadata: Vec<NodeMetadata> = Vec::new();
-
-        for (_, layout) in &pred_layouts {
-            match { NodeMetadata::get_node_metadata(directory, &layout, NodeType::Standard) } {
-                Some(metadata) => predecessors_metadata.push(metadata),
-                None => {
-                    info!(layout = ?layout, "Failed to get node metadata for layout");
-                    break;
-                }
-            }
-        }
-        if predecessors_metadata.len() != pred_layouts.len() {
+        let Some((predecessors_metadata, pred_files)) =
+            get_predecessor_data(directory, &full_layout)
+        else {
             break;
-        }
+        };
+        let predecessors_metadata = Arc::new(predecessors_metadata);
+        let pred_files = Arc::new(pred_files);
 
         let full_layout_num_letters: usize = full_layout.iter().sum();
         let mut target_combo_sets: Vec<Set32> = ALPHABET_SET32
@@ -119,18 +134,6 @@ pub fn set_children(
             (writer, avg_writer_channel_len)
         });
 
-        let predecessors_metadata = Arc::new(predecessors_metadata);
-
-        let pred_files: Arc<Vec<File>> = Arc::new(
-            predecessors_metadata
-                .iter()
-                .map(|metadata| {
-                    let path = get_node_path(directory, &metadata.layout, metadata.node_type);
-                    File::open(path).expect("Failed to open predecessor file")
-                })
-                .collect(),
-        );
-        debug_assert_eq!(pred_files.len(), predecessors_metadata.len());
         let mut tasks_sent = 0;
         let full_layout = Arc::new(full_layout);
         loop {
@@ -188,7 +191,7 @@ pub fn set_children(
                             let should_log_tasks = tasks_received % PRINT_TASK_EVERY == 0;
 
                             let base_predecessors = results.base_nodes;
-                            let predecessors_map: HashMap<PartitionId, Vec<f32>> =
+                            let predecessors_map: HashMap<PartitionId, PathScores> =
                                 results.predecessors_map;
                             if should_log_tasks {
                                 let span_tasks = span!(
@@ -341,7 +344,7 @@ fn get_should_log(nodes_seen: usize, print_every: usize) -> bool {
 fn evaluate_node(
     mut node: StandardNode,
     new_node_chunk: &mut Vec<StandardNode>,
-    predecessors_map: &HashMap<PartitionId, Vec<f32>>,
+    predecessors_map: &HashMap<PartitionId, PathScores>,
     hm_static_tree: &HashMap<Set32, StaticTrie32>,
     scorecast: &Scorecast,
     ais_bigrams: &AISBigrams,
@@ -350,7 +353,7 @@ fn evaluate_node(
     counters: Vec<&AtomicUsize>,
 ) {
     let letter_map_eval = config_to_opt_letter_map_fast(node.path.keys.iter());
-    let eval = final_evaluate::final_evaluate(
+    let eval = final_evaluate::final_evaluate_bigrams(
         &node.path.keys,
         node.path.key_set,
         &letter_map_eval,
@@ -361,27 +364,23 @@ fn evaluate_node(
     if eval.is_none() {
         return;
     }
-    let (score_by_letter_count, score) = eval.unwrap();
+    let path_scores = eval.unwrap();
+    let score = path_scores.total();
     if score > threshold {
         return;
     }
-    for (key_idx, &key) in node.path.keys.iter().enumerate() {
-        if key.count_ones() != 2 {
+    for (bigram, interaction) in path_scores.bigram_totals() {
+        let other_letters = node.path.key_set.difference(bigram);
+        // A lone 2-letter key has nothing to interact with
+        if other_letters.is_empty() {
             continue;
         }
-        let other_letters = node.path.key_set.difference(key);
-        if let Some(interaction) = final_evaluate::bigram_interaction_score(
-            &node.path.keys,
-            key_idx,
-            &score_by_letter_count,
-            predecessors_map,
-        ) {
-            ais_bigrams.update_bigram_base_scores(key, other_letters, interaction);
-        }
+        ais_bigrams.update_bigram_base_scores(bigram, other_letters, interaction);
     }
     node.score = score;
-    node.score_by_letter_count = score_by_letter_count;
-    scorecast.update_current_base_scores(node.path.key_set, score);
+    node.path_scores = path_scores;
+    // Do this at the end now
+    // scorecast.update_current_base_scores(node.path.key_set, score);
     new_node_chunk.push(node);
     for counter in counters {
         counter.fetch_add(1, Ordering::Relaxed);

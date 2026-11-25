@@ -7,6 +7,7 @@ use nix::libc::{self, pread};
 use tracing::error;
 
 use crate::{
+    evaluation::final_evaluate::path_scores::PathScores,
     general::{partition_id::PartitionId, set32::Set32},
     nodes::{node_metadata::NodeMetadata, standard_node::StandardNode},
     util::set32_to_string,
@@ -26,7 +27,7 @@ pub struct IoTask {
 
 pub struct TasksResult {
     pub base_nodes: Vec<(Set32, Vec<StandardNode>)>,
-    pub predecessors_map: HashMap<PartitionId, Vec<f32>>,
+    pub predecessors_map: HashMap<PartitionId, PathScores>,
     pub target_combo_sets: Vec<Set32>,
 }
 pub struct TasksData {
@@ -317,11 +318,9 @@ impl SetChildrenReader {
                 }
             }
             for (_, nodes) in nodes_map {
-                result.predecessors_map.extend(
-                    nodes
-                        .into_iter()
-                        .map(|n| (n.path.value, n.score_by_letter_count)),
-                );
+                result
+                    .predecessors_map
+                    .extend(nodes.into_iter().map(|n| (n.path.value, n.path_scores)));
             }
         }
         result
