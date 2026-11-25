@@ -1,3 +1,4 @@
+use crate::util::set32s_to_string;
 use crate::{
     evaluation::final_evaluate::{
         scores_hm_tree::get_intersection_score32, scores_hm_tree_node::StaticTrie32,
@@ -6,7 +7,7 @@ use crate::{
     globals::NUM_LETTERS,
     util::compare_letters,
 };
-use gxhash::HashMap;
+use gxhash::{HashMap, HashMapExt};
 use tracing::{debug, span, Level, Span};
 
 pub fn all_paths_minus_one_with_capacity(path: &[Set32], capacity: usize) -> Vec<Vec<Set32>> {
@@ -133,6 +134,176 @@ pub fn all_paths_minus_one(path: &[Set32]) -> Vec<Vec<Set32>> {
     result
 }
 
+fn set_to_bigram(set32: Set32) -> Bigram {
+    let ones = set32.ones_indices();
+    // println!("{:?}", ones);
+    // let first_set = Set32::singleton(ones[1]);
+    // println!("{}", first_set.to_string());
+
+    // To preserve order, the second one goes first. a is numerically higher than b.
+    return (ones[1] as u8, ones[0] as u8);
+}
+
+fn get_bigrams(ordered_path: &[Set32]) -> Vec<Bigram> {
+    let mut res = vec![];
+    #[cfg(debug_assertions)]
+    {
+        for i in 1..ordered_path.len() {
+            if ordered_path[i].cmp(ordered_path[i - 1]).is_ge() {
+                println!(
+                    "Out of order path passed into first bigram: {}",
+                    set32s_to_string(ordered_path)
+                );
+            }
+        }
+    }
+    for key in ordered_path {
+        if key.count() == 2 {
+            res.push(set_to_bigram(*key));
+        }
+    }
+    res
+}
+
+type ScoreByLetterCount = Vec<f32>;
+type ScoreByLetterCountMap = HashMap<u8, f32>;
+type Bigram = (u8, u8); // todo, is rustc smart enough to hash this together as a u16?
+type BigramsScoreByLetterCountMap = HashMap<Bigram, ScoreByLetterCountMap>;
+
+pub struct Evaluation {
+    score_by_letter_count: ScoreByLetterCount,
+    bigrams_ais_scores_sums: HashMap<Bigram, f32>,
+    bigrams_score_by_letter_count: BigramsScoreByLetterCountMap,
+    total_score: f32,
+}
+
+pub fn final_evaluate_bigrams(
+    path: &[Set32],
+    path_key: Set32,
+    letter_idx_map: &[Option<usize>; NUM_LETTERS],
+    predecessors_map: &HashMap<PartitionId, (ScoreByLetterCount, BigramsScoreByLetterCountMap)>,
+    hm_static_tree: &HashMap<Set32, StaticTrie32>,
+    should_log: bool,
+) -> Option<Evaluation> {
+    let _span_layers_set = if should_log {
+        span!(
+            Level::DEBUG,
+            "Evaluating path",
+            path = crate::util::set32s_to_string(path)
+        )
+    } else {
+        Span::none()
+    };
+    let bigrams_in_path = get_bigrams(path);
+    let num_chars_in_path = path_key.count_ones() as usize;
+    let mut bigrams_score_by_letter_count: BigramsScoreByLetterCountMap =
+        BigramsScoreByLetterCountMap::new();
+    let mut score_by_letter_count_f64: Vec<f64> = vec![0.0; num_chars_in_path - 1];
+    let sub_paths = all_paths_minus_one(path);
+    for sub_path in sub_paths {
+        let sub_path_id = PartitionId::from_keys(&sub_path);
+        if predecessors_map.get(&sub_path_id).is_none() {
+            if should_log {
+                debug!(
+                    sub_path = crate::util::set32s_to_string(&sub_path),
+                    "No predecessor found for subpath",
+                );
+            }
+            return None;
+        }
+        let (pred_score_letter_count, pred_bigrams_score_by_letter_count) =
+            predecessors_map.get(&sub_path_id).unwrap();
+        for bigram in bigrams_in_path.iter() {
+            let bigrams_entry = bigrams_score_by_letter_count.entry(*bigram).or_default();
+            let pred_bg_score_letter_count =
+                pred_bigrams_score_by_letter_count.get(&bigram).unwrap();
+            for (letter_count, score) in pred_bg_score_letter_count.iter() {
+                // current: abc def gh]
+                // predecessor abc de gh
+                // division handled at the end?
+                // gh df, we're going to have 8-4=4 of those. so we need to divide by 4.
+                // Can do this at the end but that requires rehashing. Let's just do it now
+                // Todo do all of this in f64 then convert at the end? Make a generic struct
+                let num_duplicates = (num_chars_in_path - *letter_count as usize) as f32;
+                bigrams_entry
+                    .entry(*letter_count)
+                    .and_modify(|e| *e += score / num_duplicates);
+            }
+        }
+        for (i, score) in pred_score_letter_count.iter().enumerate() {
+            score_by_letter_count_f64[i] += *score as f64;
+        }
+    }
+
+    for i in 2..num_chars_in_path {
+        score_by_letter_count_f64[i - 2] /= (num_chars_in_path - i) as f64;
+    }
+
+    let add = get_intersection_score32(path, path_key, letter_idx_map, hm_static_tree);
+
+    // ab cd: save ab: I(ab cd) = 0.1
+    // ab ef: save ab: I(ab ef) = 0.2
+    // cd ef: save cd: I(cd ef) = 0.5
+    // ab cd ef: save ab I(ab cd ef) = 0.02
+    /*
+       fetch: [ab cd e] [ab cd f] [ab c ef] [ab d ef] [b cd ef] [a cd ef]
+       bg_score_letter_map from prev:
+       ab: [4: (0.1/2+0.1/2 (ab cd)) + 0.2/2+0.2/2 (ab ef) = 0.3] Divide by 6 - 4 = 2
+       cd: [4: 0.5/2+0.5/2 (cd ef) = 0.5]
+
+       Calculate get_intersection_score32 and add it to ab:
+       ab: [
+           4: (0.1/2+0.1/2 (ab cd)) + 0.2/2+0.2/2 (ab ef) = 0.3
+           6: 0.02 (ab cd ef)
+       ] => 0.32
+        ab + cd = .82, exactly as planned WOOOOOOOOOO!!!
+
+        Todo is like 10 division ops better or worse than a hash? As keyboard grows, it becomes smarter to do a hash
+        abc def ghi jkl mn op, eg here there is 12 4-letter scores that must be added
+
+        Todo would using an array with (letter_count, score) be better than a hashmap? More mem efficient im guessing?
+        The array will be < NUM_LETTERS. Average lookup is prob like 10 ops. Consider micromap. Have claude test.
+
+
+    */
+
+    if path.len() > 1 {
+        let first_bg = bigrams_in_path.first();
+        if first_bg.is_some() {
+            let first_bg = first_bg.unwrap();
+            bigrams_score_by_letter_count
+                .entry(*first_bg)
+                .or_default()
+                .insert(num_chars_in_path as u8, add);
+        }
+    }
+    score_by_letter_count_f64[num_chars_in_path - 2] = add as f64;
+
+    let sum = score_by_letter_count_f64.iter().sum::<f64>() as f32;
+    if should_log {
+        debug!(
+            path = crate::util::set32s_to_string(&path),
+            score_by_letter_count_f64 = ?score_by_letter_count_f64,
+            score = sum,
+            "Final score for path",
+        );
+    }
+    let mut bigram_ais_scores = HashMap::new();
+    for (k, v) in bigrams_score_by_letter_count.iter() {
+        let sum_bigram: f32 = v.iter().map(|(_, score)| *score).sum();
+        bigram_ais_scores.insert(*k, sum_bigram);
+    }
+    Some(Evaluation {
+        score_by_letter_count: score_by_letter_count_f64
+            .into_iter()
+            .map(|v| v as f32)
+            .collect(),
+        bigrams_ais_scores_sums: bigram_ais_scores,
+        bigrams_score_by_letter_count: bigrams_score_by_letter_count,
+        total_score: sum,
+    })
+}
+
 pub fn final_evaluate(
     path: &[Set32],
     path_key: Set32,
@@ -180,14 +351,7 @@ pub fn final_evaluate(
     let add = get_intersection_score32(path, path_key, letter_idx_map, hm_static_tree);
     score_by_letter_count_f64[num_chars_in_path - 2] = add as f64;
 
-    let sum_f64 = score_by_letter_count_f64.iter().sum::<f64>();
-
-    // Convert f64 results to f32 at the end
-    // let score_by_letter_count: Vec<f64> = score_by_letter_count_f64
-    //     .iter()
-    //     .map(|&x| x as f64)
-    //     .collect();
-    let sum = sum_f64 as f32;
+    let sum = score_by_letter_count_f64.iter().sum::<f64>() as f32;
     if should_log {
         debug!(
             path = crate::util::set32s_to_string(&path),
@@ -305,6 +469,23 @@ mod tests {
         scores
     }
 
+    #[test]
+    fn test_set_to_bigram_maintains_order() {
+        let bg = set_to_bigram(create_set32_str!("ab"));
+        assert!(bg.0 > bg.1);
+    }
+
+    #[test]
+    fn test_get_first_bigram() {
+        let keys = create_set32s_vec!("abc,def,gh,ij");
+        assert_eq!(
+            *get_bigrams(&keys).first().unwrap(),
+            set_to_bigram(create_set32_str!("gh"))
+        );
+        let keys = create_set32s_vec!("abc,def");
+        assert_eq!(get_bigrams(&keys).first(), None);
+    }
+
     // RUSTFLAGS="-Awarnings" cargo test --release test_bigram_interaction_score_vs_evaluate -- --nocapture
     #[test]
     fn test_bigram_interaction_score_vs_evaluate() {
@@ -337,8 +518,8 @@ mod tests {
             let expected = (whole - whole_minus_bigram - bigram_alone).max(0.0) / path.len() as f64;
 
             let p_scores = dp_buckets(&path, &mut predecessors_map, &hm_static_tree);
-            let actual =
-                bigram_interaction_score(&path, key_idx, &p_scores, &predecessors_map).unwrap() as f64;
+            let actual = bigram_interaction_score(&path, key_idx, &p_scores, &predecessors_map)
+                .unwrap() as f64;
 
             println!(
                 "{:<16} {}: evaluate ({:.6e} - {:.6e} - {:.6e}) / {} = {:.6e} | bigram_interaction_score {:.6e}",
@@ -360,7 +541,10 @@ mod tests {
                 nonzero += 1;
             }
         }
-        assert!(nonzero > 0, "every interaction was 0, the comparison proves nothing");
+        assert!(
+            nonzero > 0,
+            "every interaction was 0, the comparison proves nothing"
+        );
     }
 
     #[test]

@@ -7,24 +7,6 @@ use crate::{
     util::set32_to_string,
 };
 
-/// These chars can be used as bigrams but not as part of the scorecast
-const EXCLUDED_CHARS: [char; 8] = ['\'', 'z', 'p', 'x', 'k', 'j', 'v', 'b'];
-/// Same mapping as `CHAR_TO_INDEX` ('\''=0, z=1 … a=26), computed at compile time.
-const EXCLUDED_CHARS_SET32: Set32 = {
-    let mut bits = 0u32;
-    let mut i = 0;
-    while i < EXCLUDED_CHARS.len() {
-        let ch = EXCLUDED_CHARS[i];
-        let idx = if ch == '\'' {
-            0
-        } else {
-            b'a' as u32 + 26 - ch as u32
-        };
-        bits |= 1 << idx;
-        i += 1;
-    }
-    Set32(bits)
-};
 const NUM_BIGRAMS: usize = NUM_LETTERS * (NUM_LETTERS - 1) / 2;
 
 #[derive(Debug, Clone)]
@@ -64,9 +46,10 @@ impl<Context> Decode<Context> for AISBigrams {
 bincode::impl_borrow_decode!(AISBigrams);
 
 impl AISBigrams {
-    pub fn new(target_num_keys: usize) -> Self {
+    /// `excluded` letters are ignored by every bigram's scorecast, but can still be in the bigram itself.
+    pub fn new(target_num_keys: usize, excluded: Set32) -> Self {
         Self {
-            scorecasts: std::array::from_fn(|_| Scorecast::new(target_num_keys)),
+            scorecasts: std::array::from_fn(|_| Scorecast::new(target_num_keys, excluded)),
         }
     }
 
@@ -89,22 +72,15 @@ impl AISBigrams {
         Set32::EMPTY.add(lo as u32).add(hi as u32)
     }
 
-    /// Whether interactions with `other_letters` are recorded (none of them excluded).
-    pub const fn tracks(other_letters: Set32) -> bool {
-        other_letters.intersect(EXCLUDED_CHARS_SET32).is_empty()
-    }
-
-    /// Records `score` = interaction of `bigram` with the letters on the other keys, under `other_letters`.
+    /// Records `score` = interaction of `bigram` with the letters on the other keys, under `other_letters`
+    /// minus the excluded letters.
     pub fn update_bigram_base_scores(&self, bigram: Set32, other_letters: Set32, score: f32) {
         debug_assert!(other_letters.intersect(bigram).is_empty());
-        if !Self::tracks(other_letters) {
-            return;
-        }
         self.scorecasts[Self::bigram_index(bigram)].update_current_base_scores(other_letters, score);
     }
     pub fn get_bigram_score(&self, bigram: Set32, other_letters: Set32) -> Option<f32> {
-        let full_letters: Set32 = other_letters.union(bigram).union(EXCLUDED_CHARS_SET32);
-        self.scorecasts[Self::bigram_index(bigram)].get_score_target_num_keys(full_letters)
+        self.scorecasts[Self::bigram_index(bigram)]
+            .get_score_target_num_keys(other_letters.union(bigram))
     }
     pub fn update_all(&mut self, threshold: f32) {
         for (idx, scorecast) in self.scorecasts.iter_mut().enumerate() {
@@ -122,9 +98,14 @@ impl AISBigrams {
 mod tests {
     use super::*;
     use crate::{
-        create_set32_str, scorecast::scorecast::ScorecastEncodeable, util::ALPHABET_SET32,
+        create_set32_str, scorecast::scorecast::ScorecastEncodeable,
+        settings::AIS_BIGRAM_EXCLUDED_CHARS, util::ALPHABET_SET32,
     };
     use std::collections::HashMap;
+
+    fn excluded() -> Set32 {
+        create_set32_str!(AIS_BIGRAM_EXCLUDED_CHARS)
+    }
 
     #[test]
     fn bigram_index_is_bijective() {
@@ -138,14 +119,6 @@ mod tests {
         assert!(seen.iter().all(|&s| s));
     }
 
-    #[test]
-    fn excluded_chars_set32_matches_char_to_index() {
-        let expected = EXCLUDED_CHARS.iter().fold(Set32::EMPTY, |set, ch| {
-            set.add(crate::globals::CHAR_TO_INDEX[ch] as u32)
-        });
-        assert_eq!(EXCLUDED_CHARS_SET32, expected);
-    }
-
     /// Snapshot of what `update_current_base_scores` has recorded for one bigram's scorecast.
     fn recorded(bigrams: &AISBigrams, bigram: Set32) -> HashMap<Set32, f32> {
         ScorecastEncodeable::from_scorecast(&bigrams.scorecasts[AISBigrams::bigram_index(bigram)])
@@ -153,19 +126,16 @@ mod tests {
     }
 
     #[test]
-    fn update_skips_nodes_with_excluded_letters() {
-        let bigrams = AISBigrams::new(10);
+    fn update_turns_off_excluded_letters() {
+        let bigrams = AISBigrams::new(10, excluded());
         let bigram = create_set32_str!("ae");
 
-        // 'z' is excluded: nothing should be recorded, stripped or not
-        bigrams.update_bigram_base_scores(bigram, create_set32_str!("tz"), 1.0);
-        assert!(recorded(&bigrams, bigram).is_empty());
-
-        // All valid letters: recorded under other_letters only
+        // 'z' is excluded: recorded under "ts", and both writes land on the same entry
+        bigrams.update_bigram_base_scores(bigram, create_set32_str!("tsz"), 1.0);
         bigrams.update_bigram_base_scores(bigram, create_set32_str!("ts"), 2.0);
         let scores = recorded(&bigrams, bigram);
         assert_eq!(scores.len(), 1);
-        assert_eq!(scores.get(&create_set32_str!("ts")), Some(&2.0));
+        assert_eq!(scores.get(&create_set32_str!("ts")), Some(&1.0));
 
         // Only the target bigram's scorecast is touched
         assert!(recorded(&bigrams, create_set32_str!("at")).is_empty());
@@ -181,7 +151,7 @@ mod tests {
 
     #[test]
     fn encode_decode_round_trip() {
-        let mut bigrams = AISBigrams::new(10);
+        let mut bigrams = AISBigrams::new(10, excluded());
         let bigram = create_set32_str!("ae");
         bigrams.update_bigram_base_scores(bigram, create_set32_str!("ts"), 2.0);
         bigrams.scorecasts[AISBigrams::bigram_index(bigram)]
@@ -200,11 +170,15 @@ mod tests {
             bigrams.scorecasts[idx].partial_estimates_target_num_keys
         );
         assert!(decoded.scorecasts.iter().all(|s| s.target_num_keys == 10));
+        assert!(decoded
+            .scorecasts
+            .iter()
+            .all(|s| ScorecastEncodeable::from_scorecast(s).excluded == excluded()));
     }
 
     #[test]
     fn update_keeps_minimum_score() {
-        let bigrams = AISBigrams::new(10);
+        let bigrams = AISBigrams::new(10, excluded());
         let bigram = create_set32_str!("ae");
         for score in [3.0, 1.5, 2.0] {
             bigrams.update_bigram_base_scores(bigram, create_set32_str!("ts"), score);
@@ -217,17 +191,15 @@ mod tests {
 
     #[test]
     fn get_bigram_score_looks_up_complement_without_excluded_letters() {
-        let mut bigrams = AISBigrams::new(2);
+        let mut bigrams = AISBigrams::new(2, excluded());
         let bigram = create_set32_str!("ae");
         let placed = create_set32_str!("aets");
         let complement = ALPHABET_SET32.difference(placed);
 
         let scorecast = &mut bigrams.scorecasts[AISBigrams::bigram_index(bigram)];
-        // One completed layer -> 1 key remaining, keeps the debug_assert in the lookup satisfied
-        scorecast.pathkey_scores_by_layer.push(HashMap::new());
         scorecast
             .partial_estimates_target_num_keys
-            .insert(complement.difference(EXCLUDED_CHARS_SET32), 4.0);
+            .insert(complement.difference(excluded()), 4.0);
         // Decoy: the complement with excluded letters still in it must not be used
         scorecast
             .partial_estimates_target_num_keys

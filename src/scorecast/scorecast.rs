@@ -20,6 +20,7 @@ pub struct ScorecastEncodeable {
     pub partial_estimates_target_num_keys: HashMap<Set32, f32>,
     pub pathkey_scores_by_layer: Vec<HashMap<Set32, f32>>, // Base scores for each layer, used to create new scores
     pub target_num_keys: usize,
+    pub excluded: Set32,
     pub current_pathkey_scores: HashMap<Set32, f32>, // Current base scores to update base_scores
 }
 
@@ -29,6 +30,7 @@ impl ScorecastEncodeable {
             partial_estimates_target_num_keys: self.partial_estimates_target_num_keys,
             pathkey_scores_by_layer: self.pathkey_scores_by_layer,
             target_num_keys: self.target_num_keys,
+            excluded: self.excluded,
             current_pathkey_scores: self.current_pathkey_scores.clone().into_iter().collect(),
         }
     }
@@ -37,6 +39,7 @@ impl ScorecastEncodeable {
             partial_estimates_target_num_keys: scorecast.partial_estimates_target_num_keys.clone(),
             pathkey_scores_by_layer: scorecast.pathkey_scores_by_layer.clone(),
             target_num_keys: scorecast.target_num_keys,
+            excluded: scorecast.excluded,
             current_pathkey_scores: scorecast
                 .current_pathkey_scores
                 .clone()
@@ -53,16 +56,25 @@ pub struct Scorecast {
     /// Same as partial estimates but num of current keys is higher to allow each completed layer to not contribute to the key count.
     pub pathkey_scores_by_layer: Vec<HashMap<Set32, f32>>, // Base scores for each layer, used to create new scores
     pub target_num_keys: usize,
+    /// Letters this scorecast ignores: writes have them turned off, and reads look up the complement
+    /// without them.
+    excluded: Set32,
     current_pathkey_scores: DashMap<Set32, f32>, // Current base scores to update base_scores
 }
 impl Scorecast {
-    pub fn new(target_num_keys: usize) -> Self {
+    pub fn new(target_num_keys: usize, excluded: Set32) -> Self {
         Self {
             partial_estimates_target_num_keys: HashMap::new(),
             pathkey_scores_by_layer: vec![],
             target_num_keys,
+            excluded,
             current_pathkey_scores: DashMap::new(),
         }
+    }
+
+    /// The letters this scorecast builds estimates over.
+    const fn letters(&self) -> Set32 {
+        ALPHABET_SET32.difference(self.excluded)
     }
 
     pub fn save(&self, path: &str) {
@@ -89,22 +101,28 @@ impl Scorecast {
         Ok(data.convert_to_scorecast())
     }
 
+    /// Excluded letters in `key` are turned off before recording.
     pub fn update_current_base_scores(&self, key: Set32, score: f32) {
+        debug_assert_ne!(
+            key,
+            Set32::EMPTY,
+            "Key for current base scores cannot be empty"
+        );
+        let key = key.difference(self.excluded);
+        // 0 or 1 letters have no conditionals, and the single-letter padding already adds them at 0
+        if key.count_ones() < 2 {
+            return;
+        }
         self.current_pathkey_scores
             .entry(key)
             .and_modify(|existing_score| {
                 *existing_score = existing_score.min(score);
             })
             .or_insert(score);
-        debug_assert_ne!(
-            key,
-            Set32::EMPTY,
-            "Key for current base scores cannot be empty"
-        );
     }
 
     pub fn get_score_target_num_keys(&self, keys: Set32) -> Option<f32> {
-        let other = ALPHABET_SET32.difference(keys);
+        let other = self.letters().difference(keys);
         let res = self.partial_estimates_target_num_keys.get(&other).copied();
         res
     }
@@ -133,6 +151,7 @@ impl Scorecast {
             &self.pathkey_scores_by_layer,
             self.pathkey_scores_by_layer.len(),
             &mut current_base_scores_hm,
+            self.letters(),
         );
 
         self.pathkey_scores_by_layer.push(current_base_scores_hm);
@@ -148,6 +167,7 @@ impl Scorecast {
             &self.pathkey_scores_by_layer,
             target_num_keys,
             threshold,
+            self.letters(),
         )
     }
     // Take previous base_scores and union them with single letters such that the number of keys they represent equals the base score we are trying to add.
@@ -157,17 +177,18 @@ impl Scorecast {
         pathkey_scores_by_layer: &[HashMap<Set32, f32>],
         current_pathkey_score_target_layer_idx: usize,
         current_pathkey_scores: &mut HashMap<Set32, f32>,
+        letters: Set32,
     ) {
         assert!(current_pathkey_score_target_layer_idx == pathkey_scores_by_layer.len());
         if current_pathkey_score_target_layer_idx == 0 {
-            for key in ALPHABET_SET32.subsets_of_size(1 as u32) {
+            for key in letters.subsets_of_size(1 as u32) {
                 assert_eq!(current_pathkey_scores.contains_key(&key), false);
                 current_pathkey_scores.insert(key, 0.0);
             }
             return;
         }
         let prev_layer = &pathkey_scores_by_layer[current_pathkey_score_target_layer_idx - 1];
-        for letter in ALPHABET_SET32.subsets_of_size(1) {
+        for letter in letters.subsets_of_size(1) {
             for (&key, &value) in prev_layer.iter() {
                 if !key.intersect(letter).is_empty() {
                     continue;
@@ -187,6 +208,7 @@ impl Scorecast {
         pathkey_scores_by_layer: &[HashMap<Set32, f32>],
         target_layer_count: usize,
         threshold: f32,
+        letters: Set32,
     ) -> HashMap<Set32, f32> {
         fn dfs(
             node_solution: Set32,
@@ -283,7 +305,8 @@ impl Scorecast {
             }
             let curr_solution = result.clone();
 
-            let starters: Vec<Set32> = ALPHABET_SET32
+            // Sets with excluded letters are never recorded, so starting from them finds nothing
+            let starters: Vec<Set32> = letters
                 .subsets_of_size(total_layers_added as u32)
                 .collect();
 
@@ -435,5 +458,63 @@ mod tests {
         );
 
         assert_eq!(vec_sum, map_sum);
+    }
+
+    // cargo test --release --lib scorecast::scorecast::tests::excluded
+    #[test]
+    fn excluded_letters_are_turned_off_on_write() {
+        let scorecast = Scorecast::new(10, crate::create_set32_str!("z'"));
+        scorecast.update_current_base_scores(crate::create_set32_str!("abz"), 1.0);
+        scorecast.update_current_base_scores(crate::create_set32_str!("ab"), 2.0);
+        scorecast.update_current_base_scores(crate::create_set32_str!("cd'"), 3.0);
+        // Only "a" is left, which the singleton padding already covers
+        scorecast.update_current_base_scores(crate::create_set32_str!("az"), 0.5);
+
+        let recorded = ScorecastEncodeable::from_scorecast(&scorecast).current_pathkey_scores;
+        assert_eq!(recorded.len(), 2);
+        assert_eq!(recorded.get(&crate::create_set32_str!("ab")), Some(&1.0));
+        assert_eq!(recorded.get(&crate::create_set32_str!("cd")), Some(&3.0));
+    }
+
+    #[test]
+    fn excluded_letters_are_dropped_from_lookup() {
+        let mut scorecast = Scorecast::new(10, crate::create_set32_str!("z'"));
+        let placed = crate::create_set32_str!("abc");
+        let complement = ALPHABET_SET32.difference(placed);
+        scorecast
+            .partial_estimates_target_num_keys
+            .insert(complement.difference(crate::create_set32_str!("z'")), 4.0);
+        // Decoy: the complement with the excluded letters still in it
+        scorecast
+            .partial_estimates_target_num_keys
+            .insert(complement, 99.0);
+
+        assert_eq!(scorecast.get_score_target_num_keys(placed), Some(4.0));
+        // Placing an excluded letter changes nothing
+        assert_eq!(
+            scorecast.get_score_target_num_keys(placed.union(crate::create_set32_str!("z"))),
+            Some(4.0)
+        );
+    }
+
+    #[test]
+    fn excluded_letters_are_not_padded_in() {
+        let excluded = crate::create_set32_str!("z'");
+        let mut scorecast = Scorecast::new(10, excluded);
+        scorecast.update_current_base_scores(crate::create_set32_str!("abz"), 1.0);
+        scorecast.update_pathkey_scores_by_layer();
+        scorecast.update_current_base_scores(crate::create_set32_str!("cde"), 2.0);
+        scorecast.update_pathkey_scores_by_layer();
+
+        // Layer 0: "ab" plus the 25 non-excluded singletons
+        assert_eq!(scorecast.pathkey_scores_by_layer[0].len(), 26);
+        for layer in &scorecast.pathkey_scores_by_layer {
+            assert!(layer.keys().all(|key| key.intersect(excluded).is_empty()));
+        }
+        // Layer 1 still pads the previous layer with allowed letters
+        assert_eq!(
+            scorecast.pathkey_scores_by_layer[1].get(&crate::create_set32_str!("abc")),
+            Some(&1.0)
+        );
     }
 }

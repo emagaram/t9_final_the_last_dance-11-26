@@ -366,10 +366,10 @@ fn evaluate_node(
         return;
     }
     for (key_idx, &key) in node.path.keys.iter().enumerate() {
-        let other_letters = node.path.key_set.difference(key);
-        if key.count_ones() != 2 || !AISBigrams::tracks(other_letters) {
+        if key.count_ones() != 2 {
             continue;
         }
+        let other_letters = node.path.key_set.difference(key);
         if let Some(interaction) = final_evaluate::bigram_interaction_score(
             &node.path.keys,
             key_idx,

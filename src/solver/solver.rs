@@ -4,9 +4,11 @@ use std::{
 };
 
 use crate::{
+    create_set32_str,
     evaluation::final_evaluate::scores_hm_tree::read_stream32,
+    general::set32::Set32,
     scorecast::{ais_bigrams::AISBigrams, scorecast::Scorecast},
-    settings::{HM_TRIE, ITERATION_ID, READ_CALC_RATIO},
+    settings::{AIS_BIGRAM_EXCLUDED_CHARS, HM_TRIE, ITERATION_ID, READ_CALC_RATIO},
     solver::{
         create_root::create_root, set_children::set_children, set_full_estimate::set_full_estimate,
     },
@@ -34,8 +36,11 @@ pub fn solver(threshold: f32, target_num_keys: usize) {
             nodes_seen_layer_counter: AtomicUsize::new(0),
             total_nodes_seen_counter: AtomicUsize::new(0),
             total_elapsed_set_children: Duration::ZERO,
-            scorecast: Scorecast::new(target_num_keys),
-            ais_bigrams: AISBigrams::new(target_num_keys),
+            scorecast: Scorecast::new(target_num_keys, Set32::EMPTY),
+            ais_bigrams: AISBigrams::new(
+                target_num_keys,
+                create_set32_str!(AIS_BIGRAM_EXCLUDED_CHARS),
+            ),
             seen: HashSet::new(),
             directory: ITERATION_ID.to_string(),
         };

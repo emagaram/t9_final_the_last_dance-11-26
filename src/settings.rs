@@ -15,6 +15,8 @@ pub const READ_CALC_RATIO: usize = 2;
 pub const WRITE_BUFFER_SIZE: usize = 20;
 
 pub const SCORECAST_THREAD_NUMS: [usize; 3] = [20, 20, 20];
+/// Letters every bigram scorecast ignores. They can still be one of the bigram's own two letters.
+pub const AIS_BIGRAM_EXCLUDED_CHARS: &str = "'zpxkjvb";
 pub const PRINT_NODE_EVERY: usize = 500_000;
 pub const PRINT_TASK_EVERY: usize = 100_000;
 
