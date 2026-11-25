@@ -182,7 +182,18 @@ mod tests {
             predecessor_set,
             target_combo_set,
         );
-        assert_eq!(full_paths.unwrap(), create_set32s_vec!("abc,def,ghij"));
+        assert_eq!(full_paths, None);
+
+        let predecessor_path = create_set32s_vec!("ghij,abc,de");
+        let predecessor_set = path_to_set32(&predecessor_path);
+        let target_combo_set = create_set32_str!("abcdefghij");
+        let full_paths = get_full_path_from_predecessor(
+            predecessor_path.len(),
+            predecessor_path,
+            predecessor_set,
+            target_combo_set,
+        );
+        assert_eq!(full_paths.unwrap(), create_set32s_vec!("ghij,abc,def"));
 
         // def ab
         // abc de
@@ -210,7 +221,7 @@ mod tests {
             predecessor_set,
             target_combo_set,
         );
-        assert_eq!(full_paths.unwrap(), create_set32s_vec!("bci,def,agh"));
+        assert_eq!(full_paths, None);
     }
 
     #[test]

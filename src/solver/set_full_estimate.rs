@@ -307,11 +307,19 @@ mod tests {
         let node_path = create_set32s_vec!("ab,cd");
         let missing = ALPHABET_SET32.difference(path_to_set32(&node_path));
         let parents_to_eval = calculate_parents_to_check(&node_path, missing);
-        // ab + 23, cd + 23, 23 choose 2
-        assert_eq!(parents_to_eval.len(), 23 * 2 + 23 * 22 / 2);
+        // ab + 23, cd + 23
+        assert_eq!(parents_to_eval.len(), 23 * 2);
+        let id = |keys: Vec<Set32>| PartitionId::from_keys(&keys);
+        assert!(parents_to_eval.contains(&id(create_set32s_vec!("abe,cd"))));
+        assert!(parents_to_eval.contains(&id(create_set32s_vec!("cde,ab"))));
+        // A new key is in the next layer, which doesn't exist yet
+        assert!(!parents_to_eval.contains(&id(create_set32s_vec!("ab,cd,ef"))));
         let node_path = create_set32s_vec!("abc,de");
         let missing = ALPHABET_SET32.difference(path_to_set32(&node_path));
         let parents_to_eval = calculate_parents_to_check(&node_path, missing);
-        assert_eq!(parents_to_eval.len(), 22 * 2 + 22 * 21 / 2);
+        // abc + 22, de + 22
+        assert_eq!(parents_to_eval.len(), 22 * 2);
+        assert!(parents_to_eval.contains(&id(create_set32s_vec!("abcf,de"))));
+        assert!(parents_to_eval.contains(&id(create_set32s_vec!("abc,def"))));
     }
 }
