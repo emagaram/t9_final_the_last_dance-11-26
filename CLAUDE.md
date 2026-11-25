@@ -77,7 +77,7 @@ Run targeted tests, not the whole suite.
       2. `final_evaluate` scores the node.
       3. The node is dropped if the evaluation returns `None` or `score > threshold`.
       4. `scorecast.update_current_base_scores(key_set, score)` records the minimum score per letter set.
-   6. One **writer thread** (`nodes/writer.rs`) appends a bincode chunk per combo set to the layout's `.bin`, then writes `metadata.bin` (combo set → byte range) by atomic rename.
+   6. One **writer thread** (`nodes/writer.rs`) appends a bincode chunk per combo set to the layout's `.bin`. Once every worker has finished (`solver/pipeline.rs::run_pipeline` returns), `set_children` writes `metadata.bin` (combo set → byte range) by atomic rename.
       - If the layout produced no nodes, `break`; larger `key_len` would need those nodes as predecessors.
    7. Push the layout to `next_layouts` and `seen`, then call `state.save()`. This per-layout save is what makes runs resumable.
 3. **`update_scorecast`**: load `scorecasts/scorecast_{layer}.bin` if it exists. Otherwise run `Scorecast::update(threshold)` and save the result.

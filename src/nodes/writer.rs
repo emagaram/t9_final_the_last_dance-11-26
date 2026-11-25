@@ -3,8 +3,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::Receiver;
-
 use crate::{
     general::set32::Set32,
     nodes::{
@@ -22,7 +20,6 @@ pub struct Task {
 }
 
 pub struct WriterWorker {
-    pub task_receiver: Receiver<Task>,
     pub file: Option<File>,
     pub node_metadata: NodeMetadata,
     pub total_time_written: Duration,
@@ -57,9 +54,8 @@ impl WriterWorker {
     pub fn write_node_metadata(&self, directory: &str) {
         NodeMetadata::write_node_metadata(directory, &self.node_metadata);
     }
-    pub fn new(layout: Vec<usize>, task_receiver: Receiver<Task>) -> WriterWorker {
+    pub fn new(layout: Vec<usize>) -> WriterWorker {
         WriterWorker {
-            task_receiver: task_receiver.clone(),
             node_metadata: NodeMetadata::new(NodeType::Standard, &layout),
             total_time_written: Duration::ZERO,
             file: None,

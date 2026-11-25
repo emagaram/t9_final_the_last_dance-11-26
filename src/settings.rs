@@ -10,7 +10,6 @@ pub const ITERATION_ID: &str = "iteration_1";
 pub const RESET_DIR: bool = true;
 pub const SAVE_TO_S3: bool = true;
 pub const READ_BATCH_SIZE: usize = 10;
-pub const TOTAL_NODE_MAX: usize = 100;
 pub const READ_CALC_RATIO: usize = 2;
 pub const WRITE_BUFFER_SIZE: usize = 20;
 
