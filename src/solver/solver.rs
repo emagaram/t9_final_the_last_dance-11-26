@@ -1,6 +1,6 @@
 use std::{
     sync::atomic::{fence, AtomicUsize},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -8,9 +8,13 @@ use crate::{
     evaluation::final_evaluate::scores_hm_tree::read_stream32,
     general::set32::Set32,
     scorecast::{ais_bigrams::AISBigrams, scorecast::Scorecast},
-    settings::{AIS_BIGRAM_EXCLUDED_CHARS, HM_TRIE, ITERATION_ID, READ_CALC_RATIO},
+    settings::{
+        AIS_BIGRAM_EXCLUDED_CHARS, FULL_ESTIMATE_CACHE_BYTES, HM_TRIE, ITERATION_ID,
+        READ_CALC_RATIO, USE_FULL_ESTIMATE2,
+    },
     solver::{
         create_root::create_root, set_children::set_children, set_full_estimate::set_full_estimate,
+        set_full_estimate2::set_full_estimate2,
     },
     state::State,
     util::{get_num_calc_workers, get_num_read_workers},
@@ -93,13 +97,36 @@ pub fn solver(threshold: f32, target_num_keys: usize) {
             total_nodes_seen = state.total_nodes_seen_counter.load(std::sync::atomic::Ordering::Relaxed),
             elapsed_set_children_time = ?state.total_elapsed_set_children, layer_completed = layer, "Layer completed"
         );
+        // Call update scorecast for all ais_bigram scorecasts using new data from layer
+
+        // Go back thru the layer we just generated and add call update scorecast values. The value entered for each subkeyboard
+        // is the score + the interaction score. eg ABC LM: S(ABC LM) + AIS (AIS LM)
+
         // get_scorecast_base_scores(layer, threshold, scorecast);
         update_scorecast(layer, threshold, &mut state.scorecast);
-        set_full_estimate(
-            &state.scorecast,
-            &state.next_layouts,
-            &state.directory,
-            threshold,
+        let full_estimate_start = Instant::now();
+        if USE_FULL_ESTIMATE2 {
+            let marks = set_full_estimate2(
+                &state.scorecast,
+                &state.next_layouts,
+                &state.directory,
+                threshold,
+                FULL_ESTIMATE_CACHE_BYTES,
+            );
+            info!(layer, ?marks, "Pending marks for layer");
+        } else {
+            set_full_estimate(
+                &state.scorecast,
+                &state.next_layouts,
+                &state.directory,
+                threshold,
+            );
+        }
+        info!(
+            layer,
+            use_full_estimate2 = USE_FULL_ESTIMATE2,
+            elapsed = ?full_estimate_start.elapsed(),
+            "Full estimate done"
         );
         state.layouts_to_eval = state.next_layouts.clone();
         state.next_layouts.clear();

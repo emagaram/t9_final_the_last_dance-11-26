@@ -34,10 +34,6 @@ cargo bench --bench micromap            # criterion benches: micromap, count_vs_
 
 Tests read data files relative to the repo root (`word_freq_*.json`, `test_data/`).
 
-The suite is not uniformly green:
-- `predecessor::test_get_full_paths_from_predecessor` currently fails.
-- Some tests reference fixtures that don't exist (`word_freq_test.json`, `scores`, `test_data/sample_nodes.bin`).
-
 Run targeted tests, not the whole suite.
 
 ## Core representations
@@ -84,6 +80,7 @@ Run targeted tests, not the whole suite.
 4. **`set_full_estimate`** (`solver/set_full_estimate.rs`) goes over `next_layouts` in descending letter-sum order, so parents come first. It rewrites every node **in place** with `is_valid_set = true`. A node gets `is_valid` if either:
    - some valid same-layer parent (the same path with one more letter on some key) exists, or
    - `score + scorecast.get_score_target_num_keys(key_set) < threshold`.
+   - With `USE_FULL_ESTIMATE2`, `solver/set_full_estimate2.rs` computes the same flags in reverse: each valid node marks its same-layer children (one letter fewer). Marks wait in memory (`solver/pending_marks.rs`) until the child chunk is evaluated. If the marks that can be flushed exceed `FULL_ESTIMATE_CACHE_BYTES`, the workers freeze and those marks are written to disk.
 5. Set `layouts_to_eval = next_layouts`, increment `layer`, and `state.save()`. Repeat while `layer < target_num_keys`.
    - The loop ends with a log line only; there is no "extract best layout" step.
 

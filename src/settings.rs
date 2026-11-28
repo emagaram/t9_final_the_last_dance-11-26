@@ -12,6 +12,11 @@ pub const SAVE_TO_S3: bool = true;
 pub const READ_BATCH_SIZE: usize = 10;
 pub const READ_CALC_RATIO: usize = 2;
 pub const WRITE_BUFFER_SIZE: usize = 20;
+/// Use set_full_estimate2 (valid nodes mark their children) instead of set_full_estimate (nodes read their parents)
+pub const USE_FULL_ESTIMATE2: bool = false;
+/// Cap on set_full_estimate2's pending marks, at 16 B per marked node. Real RAM is about 2-3x this (hash set and
+/// DashMap overhead). Past it, the workers freeze while the marks are written to disk.
+pub const FULL_ESTIMATE_CACHE_BYTES: usize = 4 << 30;
 
 pub const SCORECAST_THREAD_NUMS: [usize; 3] = [20, 20, 20];
 /// Letters every bigram scorecast ignores. They can still be one of the bigram's own two letters.

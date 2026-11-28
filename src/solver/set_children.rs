@@ -162,6 +162,7 @@ pub fn set_children(
                         );
                         total_seen_layer_counter.fetch_add(1, Ordering::Relaxed);
 
+                        // target combo set: ABCDEFGH, base_nodes=[ABC DE FG] (H) ABC FGH DE (ABC FGH)
                         let full_path = get_full_path_from_predecessor(
                             full_layout.len(),
                             base_node.path.keys,
